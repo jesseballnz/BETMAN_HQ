@@ -1,4 +1,5 @@
 import { getAssumptions } from '@/data/store';
+import { getLiveSubscriberCounts } from '@/data/liveCounts';
 import { buildMonthlyForecast, getSalaryTier, fmtNZD, fmtNumber } from '@/lib/calculations';
 import { SALARY_TIERS } from '@/lib/types';
 import { PageTitle } from '@/components/MetricCard';
@@ -7,10 +8,13 @@ export const dynamic = 'force-dynamic';
 
 const FOUNDERS = ['Jesse', 'Dev', 'Bobby'] as const;
 
-export default function SalaryPage() {
+export default async function SalaryPage() {
   const assumptions = getAssumptions();
   const forecast = buildMonthlyForecast(assumptions);
-  const currentSubs = forecast[0].activeWeeklySubscribers;
+
+  // Use live Stripe count to determine current salary tier
+  const live = await getLiveSubscriberCounts();
+  const currentSubs = live.activeWeeklySubscribers;
   const currentTier = getSalaryTier(currentSubs);
 
   return (
@@ -18,6 +22,13 @@ export default function SalaryPage() {
       <PageTitle subtitle="Salary unlocks driven by Active Weekly Subscribers">
         Founder Salary Ladder
       </PageTitle>
+
+      {/* Source badge */}
+      <p className={`text-xs mb-6 ${live.source === 'stripe' ? 'text-emerald-400' : 'text-amber-400'}`}>
+        {live.source === 'stripe'
+          ? `⚡ Salary tier calculated from live Stripe subscriber count (${fmtNumber(currentSubs)} active)`
+          : `⚠️ Using demo data — connect Stripe for live tier calculation`}
+      </p>
 
       {/* Current Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -129,8 +140,7 @@ export default function SalaryPage() {
             <tfoot>
               <tr className="border-t-2 border-gray-700 font-bold text-sm">
                 <td className="py-2 px-3 text-slate-200">Annual Total</td>
-                <td />
-                <td />
+                <td /><td />
                 <td />
                 <td className="py-2 px-3 text-right tabular-nums text-slate-200">
                   {fmtNZD(forecast.reduce((s, m) => s + m.founderSalariesExpense, 0))}

@@ -1,4 +1,5 @@
 import { getAssumptions } from '@/data/store';
+import { getLiveSubscriberCounts } from '@/data/liveCounts';
 import { buildMonthlyForecast, fmtNZD, fmtNumber, fmtPct } from '@/lib/calculations';
 import { MILESTONES } from '@/lib/types';
 import { PageTitle } from '@/components/MetricCard';
@@ -6,11 +7,13 @@ import MilestoneProgressBar from '@/components/MilestoneProgressBar';
 
 export const dynamic = 'force-dynamic';
 
-export default function ScoreboardPage() {
+export default async function ScoreboardPage() {
   const assumptions = getAssumptions();
   const forecast = buildMonthlyForecast(assumptions);
-  const current = forecast[0];
-  const latestSubs = current.activeWeeklySubscribers;
+
+  // Use live Stripe count as the headline number
+  const live = await getLiveSubscriberCounts();
+  const currentSubs = live.activeWeeklySubscribers;
 
   return (
     <div>
@@ -24,9 +27,13 @@ export default function ScoreboardPage() {
           Active Weekly Subscribers
         </p>
         <p className="text-7xl lg:text-8xl font-black text-emerald-400 tabular-nums">
-          {fmtNumber(latestSubs)}
+          {fmtNumber(currentSubs)}
         </p>
-        <p className="text-slate-400 text-sm mt-2">As at Month 1</p>
+        <p className="text-slate-500 text-xs mt-3">
+          {live.source === 'stripe'
+            ? `Live from Stripe · ${new Date(live.fetchedAt).toLocaleTimeString()}`
+            : 'Demo data — connect Stripe for live counts'}
+        </p>
       </div>
 
       {/* Milestone Progress Bars */}
@@ -37,7 +44,7 @@ export default function ScoreboardPage() {
             <MilestoneProgressBar
               key={m}
               label={`${fmtNumber(m)} Subscribers`}
-              current={latestSubs}
+              current={currentSubs}
               target={m}
             />
           ))}
@@ -46,7 +53,8 @@ export default function ScoreboardPage() {
 
       {/* Monthly Forecast Table */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <h2 className="text-slate-200 text-lg font-bold mb-4">Monthly Subscriber Forecast</h2>
+        <h2 className="text-slate-200 text-lg font-bold mb-1">Monthly Subscriber Forecast</h2>
+        <p className="text-slate-500 text-xs mb-4">Projections driven from Assumptions · Headline count from Stripe</p>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>

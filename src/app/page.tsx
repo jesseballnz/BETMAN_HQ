@@ -1,7 +1,13 @@
 import { getAssumptions } from '@/data/store';
+import { getLiveSubscriberCounts } from '@/data/liveCounts';
 import {
   buildMonthlyForecast,
-  buildDashboardSummary,
+  getSalaryTier,
+  getNextSalaryTier,
+  getNextMilestone,
+  calcWeeklySubRevenue,
+  calcDayPassRevenue,
+  calcTotalExpenses,
   fmtNZD,
   fmtNumber,
 } from '@/lib/calculations';
@@ -10,47 +16,80 @@ import DashboardCharts from './DashboardCharts';
 
 export const dynamic = 'force-dynamic';
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
   const assumptions = getAssumptions();
-  const summary = buildDashboardSummary(assumptions);
-  const forecast = buildMonthlyForecast(assumptions);
 
-  const currentMonth = forecast[0];
+  // Live subscriber count from Stripe (falls back to assumptions if Stripe not configured)
+  const live = await getLiveSubscriberCounts();
+  const currentSubs = live.activeWeeklySubscribers;
+
+  // Build 12-month forecast using assumptions (used for charts and projections)
+  const forecast = buildMonthlyForecast(assumptions);
   const latestMonth = forecast[forecast.length - 1];
 
-  const profitColor: 'green' | 'red' = currentMonth.operatingProfit >= 0 ? 'green' : 'red';
+  // Current-period metrics derived from the live Stripe subscriber count
+  const currentTier = getSalaryTier(currentSubs);
+  const nextTier = getNextSalaryTier(currentSubs);
+  const nextMilestone = getNextMilestone(currentSubs);
+  const dayPassSales = live.activeDayPassSalesPerMonth > 0
+    ? live.activeDayPassSalesPerMonth
+    : assumptions.dayPassSalesPerMonth;
+
+  const mrr = calcWeeklySubRevenue(currentSubs, assumptions.weeklyPassPriceNZD);
+  const monthlyRevenue =
+    mrr +
+    calcDayPassRevenue(dayPassSales, assumptions.dayPassPriceNZD) +
+    assumptions.radioAdRevenue +
+    assumptions.sponsorshipRevenue;
+  const totalExpenses = calcTotalExpenses(currentSubs, assumptions);
+  const operatingProfit = monthlyRevenue - totalExpenses;
+  const cashPosition = assumptions.openingCashNZD + operatingProfit;
+
+  const profitColor: 'green' | 'red' = operatingProfit >= 0 ? 'green' : 'red';
 
   return (
     <div>
       <PageTitle subtitle="Company Mission Control">BETMAN HQ</PageTitle>
+
+      {/* Live data source badge */}
+      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold mb-6 ${
+        live.source === 'stripe'
+          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+          : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+      }`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${live.source === 'stripe' ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
+        {live.source === 'stripe'
+          ? `Live from Stripe · Updated ${new Date(live.fetchedAt).toLocaleTimeString()}`
+          : 'Demo data · Connect Stripe to see live subscriber counts'}
+      </div>
 
       {/* Hero Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="md:col-span-2">
           <MetricCard
             title="Active Weekly Subscribers"
-            value={fmtNumber(summary.activeWeeklySubscribers)}
+            value={fmtNumber(currentSubs)}
             subtitle={
-              summary.nextMilestone
-                ? `${fmtNumber(summary.subscribersToGo!)} subscribers to next milestone (${fmtNumber(summary.nextMilestone)})`
+              nextMilestone
+                ? `${fmtNumber(nextMilestone - currentSubs)} subscribers to next milestone (${fmtNumber(nextMilestone)})`
                 : 'Maximum milestone reached'
             }
             accent="green"
             size="hero"
-            badge="CURRENT"
+            badge={live.source === 'stripe' ? 'LIVE · STRIPE' : 'DEMO'}
           />
         </div>
         <div className="flex flex-col gap-4">
           <MetricCard
             title="Next Milestone"
-            value={summary.nextMilestone ? fmtNumber(summary.nextMilestone) : '—'}
+            value={nextMilestone ? fmtNumber(nextMilestone) : '—'}
             subtitle="Active Weekly Subscribers"
             accent="gold"
             size="lg"
           />
           <MetricCard
             title="Subscribers to Go"
-            value={summary.subscribersToGo !== null ? fmtNumber(summary.subscribersToGo) : '—'}
+            value={nextMilestone ? fmtNumber(nextMilestone - currentSubs) : '—'}
             accent="blue"
             size="md"
           />
@@ -59,12 +98,12 @@ export default function DashboardPage() {
 
       {/* Financial Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <MetricCard title="MRR" value={fmtNZD(summary.mrr)} accent="green" />
-        <MetricCard title="ARR" value={fmtNZD(summary.arr)} accent="green" />
-        <MetricCard title="Monthly Revenue" value={fmtNZD(summary.monthlyRevenue)} accent="green" />
+        <MetricCard title="MRR" value={fmtNZD(mrr)} accent="green" />
+        <MetricCard title="ARR" value={fmtNZD(mrr * 12)} accent="green" />
+        <MetricCard title="Monthly Revenue" value={fmtNZD(monthlyRevenue)} accent="green" />
         <MetricCard
           title="Monthly Operating Profit"
-          value={fmtNZD(summary.monthlyOperatingProfit)}
+          value={fmtNZD(operatingProfit)}
           accent={profitColor}
         />
       </div>
@@ -73,41 +112,42 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
         <MetricCard
           title="Cash Position"
-          value={fmtNZD(summary.cashPosition)}
-          accent={summary.cashPosition >= 0 ? 'green' : 'red'}
+          value={fmtNZD(cashPosition)}
+          accent={cashPosition >= 0 ? 'green' : 'red'}
         />
         <MetricCard
           title="Current Founder Salary (Each)"
           value={
-            summary.currentSalaryTier.monthlyPerFounder < 0
+            currentTier.monthlyPerFounder < 0
               ? 'Board Review'
-              : fmtNZD(summary.currentSalaryTier.monthlyPerFounder) + '/mo'
+              : fmtNZD(currentTier.monthlyPerFounder) + '/mo'
           }
-          subtitle={summary.currentSalaryTier.label}
+          subtitle={currentTier.label}
           accent="gold"
         />
         <MetricCard
           title="Next Salary Unlock"
           value={
-            summary.nextSalaryTier
-              ? fmtNumber(summary.nextSalaryTier.minSubscribers) + ' subs'
+            nextTier
+              ? fmtNumber(nextTier.minSubscribers) + ' subs'
               : 'Max Tier'
           }
           subtitle={
-            summary.nextSalaryTier
-              ? `Unlocks ${fmtNZD(summary.nextSalaryTier.monthlyPerFounder)}/mo each`
+            nextTier
+              ? `Unlocks ${fmtNZD(nextTier.monthlyPerFounder)}/mo each`
               : 'All tiers unlocked'
           }
           accent="blue"
         />
       </div>
 
-      {/* Charts */}
+      {/* Charts — driven from assumptions-based forecast */}
       <DashboardCharts forecast={forecast} />
 
       {/* 12-Month Summary Table */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mt-8">
-        <h2 className="text-slate-200 text-lg font-bold mb-4">12-Month Forecast Summary</h2>
+        <h2 className="text-slate-200 text-lg font-bold mb-1">12-Month Forecast Summary</h2>
+        <p className="text-slate-500 text-xs mb-4">Projections driven from Assumptions page · Current period uses live Stripe count</p>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>

@@ -11,6 +11,9 @@ import {
 } from './types';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const FORECAST_TARGET_SUBSCRIBERS = 10000;
+const FORECAST_TARGET_GROWTH_PCT = 30;
+const FORECAST_TARGET_MONTHS_TO_10K = 12;
 
 // ─── Salary Tier ─────────────────────────────────────────────────────────────
 
@@ -281,6 +284,77 @@ export function buildDashboardSummary(assumptions: Assumptions): DashboardSummar
     currentSalaryTier: getSalaryTier(sub),
     nextSalaryTier: getNextSalaryTier(sub),
     monthlyForecast: forecast,
+  };
+}
+
+export interface ForecastTargetMetric {
+  actual: number;
+  target: number;
+  pctOfTarget: number;
+  delta: number;
+  achieved: boolean;
+  inverse?: boolean;
+}
+
+export interface ForecastTargets {
+  subscribers: ForecastTargetMetric;
+  growthRate: ForecastTargetMetric;
+  mrr: ForecastTargetMetric;
+  arr: ForecastTargetMetric;
+  revenuePerSubscriber: ForecastTargetMetric;
+  monthsTo10k: ForecastTargetMetric;
+  nextMilestone: number | null;
+  subscribersToNextMilestone: number | null;
+  currentSalaryTierLabel: string;
+}
+
+function buildTargetMetric(actual: number, target: number, inverse = false): ForecastTargetMetric {
+  const pctRaw = inverse
+    ? actual > 0
+      ? (target / actual) * 100
+      : 0
+    : target > 0
+      ? (actual / target) * 100
+      : 0;
+
+  return {
+    actual,
+    target,
+    pctOfTarget: Math.max(0, pctRaw),
+    delta: actual - target,
+    achieved: inverse ? actual <= target : actual >= target,
+    inverse,
+  };
+}
+
+export function buildForecastTargets(assumptions: Assumptions, currentSubs: number): ForecastTargets {
+  const forecast = buildMonthlyForecast(assumptions);
+  const monthlyGrowthValues = forecast.slice(1).map((m) => m.growthPct);
+  const avgGrowthPct =
+    monthlyGrowthValues.length > 0
+      ? monthlyGrowthValues.reduce((sum, value) => sum + value, 0) / monthlyGrowthValues.length
+      : 0;
+
+  const mrrActual = calcWeeklySubRevenue(currentSubs, assumptions.weeklyPassPriceNZD);
+  const mrrTarget = calcWeeklySubRevenue(FORECAST_TARGET_SUBSCRIBERS, assumptions.weeklyPassPriceNZD);
+  const arrActual = mrrActual * 12;
+  const arrTarget = mrrTarget * 12;
+  const revenuePerSubscriberActual = currentSubs > 0 ? mrrActual / currentSubs : 0;
+  const revenuePerSubscriberTarget = mrrTarget / FORECAST_TARGET_SUBSCRIBERS;
+  const monthTo10k =
+    forecast.find((month) => month.activeWeeklySubscribers >= FORECAST_TARGET_SUBSCRIBERS)?.month ?? 13;
+  const nextMilestone = getNextMilestone(currentSubs);
+
+  return {
+    subscribers: buildTargetMetric(currentSubs, FORECAST_TARGET_SUBSCRIBERS),
+    growthRate: buildTargetMetric(avgGrowthPct, FORECAST_TARGET_GROWTH_PCT),
+    mrr: buildTargetMetric(mrrActual, mrrTarget),
+    arr: buildTargetMetric(arrActual, arrTarget),
+    revenuePerSubscriber: buildTargetMetric(revenuePerSubscriberActual, revenuePerSubscriberTarget),
+    monthsTo10k: buildTargetMetric(monthTo10k, FORECAST_TARGET_MONTHS_TO_10K, true),
+    nextMilestone,
+    subscribersToNextMilestone: nextMilestone !== null ? nextMilestone - currentSubs : null,
+    currentSalaryTierLabel: getSalaryTier(currentSubs).label,
   };
 }
 

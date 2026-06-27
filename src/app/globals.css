@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --betman-bg: #0a0f1a;
+  --betman-surface: #111827;
+  --betman-border: #1f2d3d;
+  --betman-green: #10b981;
+  --betman-red: #ef4444;
+  --betman-gold: #f59e0b;
+  --betman-blue: #3b82f6;
+  --betman-text: #e2e8f0;
+  --betman-muted: #64748b;
+}
+
+body {
+  background-color: var(--betman-bg);
+  color: var(--betman-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .betman-card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl p-6;
+  }
+  
+  .betman-table td, .betman-table th {
+    @apply px-3 py-2 text-sm;
+  }
+  
+  .betman-table thead tr {
+    @apply border-b border-gray-700;
+  }
+  
+  .betman-table tbody tr {
+    @apply border-b border-gray-800 hover:bg-gray-800/50;
+  }
+  
+  .positive {
+    @apply text-emerald-400;
+  }
+  
+  .negative {
+    @apply text-red-400;
+  }
+  
+  .neutral {
+    @apply text-slate-300;
+  }
+}

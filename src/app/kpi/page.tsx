@@ -193,7 +193,7 @@ export default async function KpiPage() {
             </thead>
             <tbody>
               {usageData.map((row, i) => {
-                const errRate = row.requests > 0 ? (row.error_requests / row.requests) * 100 : 0;
+                const errRate = calcErrorRate(row.requests, row.error_requests);
                 return (
                   <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50 text-sm">
                     <td className="py-2 px-3 text-slate-300">{row.tenant_slug}</td>
@@ -245,6 +245,10 @@ export default async function KpiPage() {
       </div>
     </div>
   );
+}
+
+function calcErrorRate(requests: number, errorRequests: number): number {
+  return requests > 0 ? (errorRequests / requests) * 100 : 0;
 }
 
 function KpiCard({

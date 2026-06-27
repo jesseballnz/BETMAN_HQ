@@ -108,6 +108,36 @@ This invalidates the server-side cache so the next page load fetches fresh count
 
 ---
 
+## BETMAN_DATA Platform API
+
+BETMAN HQ connects to the **BETMAN_DATA** platform API (`jesseballnz/BETMAN_DATA`) for live racing intelligence data.
+
+### What data is pulled
+
+| Section | Data | API endpoint |
+|---|---|---|
+| Dashboard | Platform health status + version | `/health` |
+| Dashboard | Today's race meetings (NZ/AU) | `/meetings?date=YYYY-MM-DD` |
+| KPI Dashboard | Warehouse stats (meetings/races/runners/odds totals, today's counts, 24h ingestion) | `/stats/overview` |
+| KPI Dashboard | B2B tenant roster | `/admin/tenants` |
+| KPI Dashboard | Tenant API usage (7 days) | `/admin/usage?days=7` |
+
+### Setup
+
+Set these env vars in `.env.local`:
+
+```env
+# Base URL for the BETMAN_DATA platform API
+BETMAN_API_URL=https://data-api.betman.internal/v1
+
+# Admin API key (from BETMAN_DATA's ADMIN_API_KEY env var)
+BETMAN_API_KEY=your-admin-key-here
+```
+
+Without these vars, BETMAN HQ shows placeholder messages and continues to function normally — all BETMAN_DATA sections degrade gracefully.
+
+---
+
 ## Changing assumptions
 
 Go to `/assumptions` in the running app. All fields are editable and immediately drive the 12-month forecast. Key assumptions:
@@ -134,6 +164,11 @@ src/
       stripe/
         subscribers/    GET live subscriber counts from Stripe (cached 60s)
         webhook/        POST Stripe webhook handler (invalidates cache)
+      betman/
+        health/         GET BETMAN_DATA platform health (proxy)
+        stats/          GET BETMAN_DATA warehouse stats (proxy)
+        meetings/       GET today's race meetings (proxy)
+        usage/          GET tenant API usage (proxy)
   components/           Shared UI components
   data/
     store.ts            In-memory assumptions store
@@ -142,6 +177,7 @@ src/
   lib/
     calculations.ts     All financial calculations (salary tier, P&L, cash flow)
     stripe.ts           Stripe client + plan classification logic
+    betmanApi.ts        BETMAN_DATA platform API client (typed, server-side)
     types.ts            TypeScript interfaces
   __tests__/
     calculations.test.ts  67 tests covering all calculation logic

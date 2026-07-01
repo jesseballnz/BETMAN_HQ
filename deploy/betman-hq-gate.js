@@ -110,6 +110,17 @@ function authPayload(req) {
   return verifyToken(cookieValue(req, COOKIE)) || verifyToken(bearer(req));
 }
 
+function appendSetCookie(headers, cookie) {
+  if (!cookie) return;
+  const existing = headers['set-cookie'] || headers['Set-Cookie'];
+  if (!existing) {
+    headers['set-cookie'] = cookie;
+    return;
+  }
+  headers['set-cookie'] = Array.isArray(existing) ? [...existing, cookie] : [existing, cookie];
+  delete headers['Set-Cookie'];
+}
+
 function loginCookie(token, req) {
   const secure = req.socket.encrypted ? '; Secure' : '';
   return `${COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${MAX_AGE}; HttpOnly; SameSite=Lax${secure}`;
@@ -269,7 +280,7 @@ async function handleLogin(req, res) {
   res.end(JSON.stringify({ ok: true, user, expiresIn: MAX_AGE }));
 }
 
-function proxy(req, res) {
+function proxy(req, res, refreshCookie = '') {
   const headers = {
     ...req.headers,
     host: `${HQ_HOST}:${HQ_PORT}`,
@@ -284,7 +295,9 @@ function proxy(req, res) {
     path: req.url || '/',
     headers,
   }, (upstreamRes) => {
-    res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
+    const outHeaders = { ...upstreamRes.headers };
+    appendSetCookie(outHeaders, refreshCookie);
+    res.writeHead(upstreamRes.statusCode || 502, outHeaders);
     upstreamRes.pipe(res);
   });
   upstream.on('error', (error) => json(res, 502, { ok: false, error: 'hq_backend_unavailable', message: error.message }));
@@ -337,8 +350,9 @@ async function handle(req, res) {
   if (url.pathname === '/healthz') return json(res, 200, { ok: true, service: 'betman-hq-gate' });
   if ((req.method === 'GET' || req.method === 'HEAD') && (url.pathname === '/set-password' || url.pathname === '/set-password.html')) return redirectToPasswordSetup(req, res, url);
   if (isPasswordSetupRoute(req.method, url.pathname)) return proxyCore(req, res);
+  const payload = authPayload(req);
   if ((req.method === 'GET' || req.method === 'HEAD') && (url.pathname === '/login' || url.pathname === '/')) {
-    if (url.pathname === '/' && !authPayload(req)) return loginPage(req, res);
+    if (url.pathname === '/' && !payload) return loginPage(req, res);
     if (url.pathname === '/login') return loginPage(req, res);
   }
   if (req.method === 'POST' && url.pathname === '/api/auth/login') return handleLogin(req, res);
@@ -346,8 +360,8 @@ async function handle(req, res) {
     res.writeHead(200, { 'content-type': 'application/json', 'set-cookie': clearCookie(req), 'cache-control': 'no-store' });
     return res.end(JSON.stringify({ ok: true }));
   }
-  if (!authPayload(req)) return redirectToLogin(req, res);
-  return proxy(req, res);
+  if (!payload) return redirectToLogin(req, res);
+  return proxy(req, res, loginCookie(issueToken(payload.sub), req));
 }
 
 function requestHandler(req, res) {

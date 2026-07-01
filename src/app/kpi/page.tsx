@@ -13,7 +13,7 @@ import { PageTitle } from '@/components/MetricCard';
 export const dynamic = 'force-dynamic';
 
 export default async function KpiPage() {
-  const assumptions = getAssumptions();
+  const assumptions = await getAssumptions();
   const forecast = buildMonthlyForecast(assumptions);
   const kpis = buildKpiSnapshots(forecast, assumptions);
 
@@ -25,7 +25,21 @@ export default async function KpiPage() {
     isBetmanApiConfigured() ? fetchTenants() : Promise.resolve([]),
   ]);
 
-  const live = liveResult.status === 'fulfilled' ? liveResult.value : { activeWeeklySubscribers: 0, activeDayPassSalesPerMonth: 0, source: 'assumptions' as const, isLive: false, fetchedAt: new Date().toISOString() };
+  const live = liveResult.status === 'fulfilled'
+    ? liveResult.value
+    : {
+        activeWeeklySubscribers: 0,
+        activeDayPassSalesPerMonth: 0,
+        payingCustomers: 0,
+        totalProvisionings: 0,
+        uniqueAccounts: 0,
+        activeAccounts: 0,
+        passwordPendingAccounts: 0,
+        source: 'assumptions' as const,
+        accountSource: 'unavailable' as const,
+        isLive: false,
+        fetchedAt: new Date().toISOString(),
+      };
   const platformStats: BetmanStatsOverview | null = statsResult.status === 'fulfilled' ? statsResult.value : null;
   const usageData = usageResult.status === 'fulfilled' ? usageResult.value : [];
   const tenants = tenantsResult.status === 'fulfilled' ? tenantsResult.value : [];
@@ -73,13 +87,18 @@ export default async function KpiPage() {
           : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
       }`}>
         <span className={`w-1.5 h-1.5 rounded-full ${live.source === 'stripe' ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
-        {live.source === 'stripe' ? `Live from Stripe · ${fmtNumber(currentSubs)} active subscribers` : 'Demo data · Connect Stripe for live counts'}
+        {live.source === 'stripe'
+          ? `Live from Stripe · ${fmtNumber(live.payingCustomers)} paying customers · ${fmtNumber(live.totalProvisionings)} provisionings · ${fmtNumber(live.uniqueAccounts)} Core accounts`
+          : 'Demo data · Connect Stripe for live counts'}
       </div>
 
       {/* Subscriber KPI Cards */}
       <h2 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Subscribers & Revenue</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <KpiCard title="Active Weekly Subscribers" value={fmtNumber(current.activeWeeklySubscribers)} accent="emerald" />
+        <KpiCard title="Unique Accounts" value={fmtNumber(live.uniqueAccounts)} accent="emerald" />
+        <KpiCard title="Paying Customers" value={fmtNumber(live.payingCustomers)} accent="emerald" />
+        <KpiCard title="Provisionings" value={fmtNumber(live.totalProvisionings)} accent="blue" />
+        <KpiCard title="Password Pending" value={fmtNumber(live.passwordPendingAccounts)} accent="amber" />
         <KpiCard title="New Subscribers" value={`+${fmtNumber(current.newSubscribers)}`} accent="emerald" />
         <KpiCard title="Lost Subscribers" value={`-${fmtNumber(current.lostSubscribers)}`} accent="red" />
         <KpiCard title="Churn Rate" value={fmtPct(current.churnPct)} accent={current.churnPct > 10 ? 'red' : 'amber'} />

@@ -24,7 +24,7 @@ import DashboardCharts from './DashboardCharts';
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const assumptions = getAssumptions();
+  const assumptions = await getAssumptions();
 
   // Parallel data fetches
   const [live, betmanHealth, todaysMeetings] = await Promise.allSettled([
@@ -33,18 +33,41 @@ export default async function DashboardPage() {
     isBetmanApiConfigured() ? fetchTodaysMeetings() : Promise.resolve([]),
   ]);
 
-  const liveData = live.status === 'fulfilled' ? live.value : { activeWeeklySubscribers: 0, activeDayPassSalesPerMonth: 0, source: 'assumptions' as const, isLive: false, fetchedAt: new Date().toISOString() };
+  const liveData = live.status === 'fulfilled'
+    ? live.value
+    : {
+        activeWeeklySubscribers: 0,
+        activeDayPassSalesPerMonth: 0,
+        payingCustomers: 0,
+        totalProvisionings: 0,
+        uniqueAccounts: 0,
+        activeAccounts: 0,
+        passwordPendingAccounts: 0,
+        source: 'assumptions' as const,
+        accountSource: 'unavailable' as const,
+        isLive: false,
+        fetchedAt: new Date().toISOString(),
+      };
   const health: BetmanHealth | null = betmanHealth.status === 'fulfilled' ? betmanHealth.value : null;
   const meetings: BetmanMeeting[] = todaysMeetings.status === 'fulfilled' ? (todaysMeetings.value ?? []) : [];
 
+  const payingCustomers = liveData.payingCustomers;
   const currentSubs = liveData.activeWeeklySubscribers;
-  const forecast = buildMonthlyForecast(assumptions);
+  const forecast = buildMonthlyForecast(
+    assumptions,
+    liveData.source === 'stripe'
+      ? {
+          activeWeeklySubscribers: liveData.activeWeeklySubscribers,
+          dayPassSalesPerMonth: liveData.activeDayPassSalesPerMonth,
+        }
+      : undefined,
+  );
   const latestMonth = forecast[forecast.length - 1];
 
   const currentTier = getSalaryTier(currentSubs);
   const nextTier = getNextSalaryTier(currentSubs);
-  const nextMilestone = getNextMilestone(currentSubs);
-  const dayPassSales = liveData.activeDayPassSalesPerMonth > 0
+  const nextMilestone = getNextMilestone(payingCustomers);
+  const dayPassSales = liveData.source === 'stripe'
     ? liveData.activeDayPassSalesPerMonth
     : assumptions.dayPassSalesPerMonth;
 
@@ -73,7 +96,16 @@ export default async function DashboardPage() {
             : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
         }`}>
           <span className={`w-1.5 h-1.5 rounded-full ${liveData.source === 'stripe' ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
-          {liveData.source === 'stripe' ? 'Stripe · Live subscribers' : 'Stripe · Demo mode'}
+          {liveData.source === 'stripe' ? 'Stripe · Live paying customers' : 'Stripe · Demo mode'}
+        </div>
+
+        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${
+          liveData.accountSource === 'core'
+            ? 'bg-blue-500/15 text-blue-300 border border-blue-500/30'
+            : 'bg-slate-700/50 text-slate-400 border border-slate-700'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${liveData.accountSource === 'core' ? 'bg-blue-300' : 'bg-slate-500'}`} />
+          {liveData.accountSource === 'core' ? 'Core Auth · Live accounts' : 'Core Auth · Not configured'}
         </div>
 
         {/* BETMAN_DATA platform health */}
@@ -99,29 +131,30 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="md:col-span-2">
           <MetricCard
-            title="Active Weekly Subscribers"
-            value={fmtNumber(currentSubs)}
+            title="Unique Accounts"
+            value={fmtNumber(liveData.uniqueAccounts)}
             subtitle={
               nextMilestone
-                ? `${fmtNumber(nextMilestone - currentSubs)} subscribers to next milestone (${fmtNumber(nextMilestone)})`
-                : 'Maximum milestone reached'
+                ? `${fmtNumber(nextMilestone - payingCustomers)} paid customers to next revenue milestone (${fmtNumber(nextMilestone)})`
+                : 'Maximum revenue milestone reached'
             }
             accent="green"
             size="hero"
-            badge={liveData.source === 'stripe' ? 'LIVE · STRIPE' : 'DEMO'}
+            badge={liveData.accountSource === 'core' ? 'LIVE · CORE' : 'UNAVAILABLE'}
           />
         </div>
         <div className="flex flex-col gap-4">
           <MetricCard
-            title="Next Milestone"
-            value={nextMilestone ? fmtNumber(nextMilestone) : '—'}
-            subtitle="Active Weekly Subscribers"
+            title="Paying Customers"
+            value={fmtNumber(liveData.payingCustomers)}
+            subtitle={liveData.source === 'stripe' ? 'Live Stripe paid customers' : 'Demo subscriber count'}
             accent="gold"
             size="lg"
           />
           <MetricCard
-            title="Subscribers to Go"
-            value={nextMilestone ? fmtNumber(nextMilestone - currentSubs) : '—'}
+            title="Provisionings"
+            value={fmtNumber(liveData.totalProvisionings)}
+            subtitle={`${fmtNumber(liveData.passwordPendingAccounts)} accounts pending setup`}
             accent="blue"
             size="md"
           />

@@ -35,7 +35,7 @@ export default async function ConversionPage() {
     verifiedTrials: sum.verifiedTrials + row.verifiedTrials,
     conversions: sum.conversions + row.conversions,
   }), { landingSessions: 0, signups: 0, trials: 0, verifiedTrials: 0, conversions: 0 });
-  const geoSuccess = buildGeoSuccessSummary(traffic.geographies, traffic.cities, totals.landingSessions);
+  const geoSuccess = buildGeoSuccessSummary(traffic.geographies, traffic.cities, totals.landingSessions, marketMetrics);
   const sourceSuccess = buildSourceSuccessSummary(traffic.campaigns);
   const marketCurrencies = Array.from(new Set(marketMetrics.filter((row) => row.spend > 0).map((row) => row.currency)));
   const marketCurrency = marketCurrencies[0] || 'NZD';
@@ -194,6 +194,11 @@ export default async function ConversionPage() {
                   {fmtNumber(row.landingSessions)} / {fmtNumber(row.areas)} areas
                 </span>
               </div>
+              {row.metaLandingPageViews > 0 && (
+                <div className="mt-1 text-xs font-semibold tabular-nums text-amber-300">
+                  {fmtNumber(row.metaLandingPageViews)} Meta LPV
+                </div>
+              )}
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
                 <div className="h-full rounded-full bg-cyan-400" style={{ width: `${Math.min(100, row.sharePct)}%` }} />
               </div>

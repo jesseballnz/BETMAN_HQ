@@ -4,12 +4,22 @@ import { fmtNumber } from '@/lib/calculations';
 import { buildGeoSuccessSummary } from '@/lib/geoSuccess';
 import { normalizeConversionTraffic } from '@/lib/hqConversion';
 import { fetchMetaMarketMetrics } from '@/lib/metaAds';
+import { buildSourceSuccessSummary } from '@/lib/sourceSuccess';
+import { buildTargetMarketRows } from '@/lib/targetMarkets';
 import LandingMap from './LandingMap';
 
 export const dynamic = 'force-dynamic';
 
 function fmtPct(numerator: number, denominator: number): string {
   return denominator > 0 ? `${((numerator / denominator) * 100).toFixed(2)}%` : '-';
+}
+
+function fmtCurrency(value: number, currency: string): string {
+  return new Intl.NumberFormat('en-NZ', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 export default async function ConversionPage() {
@@ -26,6 +36,17 @@ export default async function ConversionPage() {
     conversions: sum.conversions + row.conversions,
   }), { landingSessions: 0, signups: 0, trials: 0, verifiedTrials: 0, conversions: 0 });
   const geoSuccess = buildGeoSuccessSummary(traffic.geographies, traffic.cities, totals.landingSessions);
+  const sourceSuccess = buildSourceSuccessSummary(traffic.campaigns);
+  const marketCurrencies = Array.from(new Set(marketMetrics.filter((row) => row.spend > 0).map((row) => row.currency)));
+  const marketCurrency = marketCurrencies[0] || 'NZD';
+  const marketTotals = marketMetrics.reduce((sum, row) => ({
+    spend: sum.spend + row.spend,
+    impressions: sum.impressions + row.impressions,
+    reach: sum.reach + row.reach,
+    clicks: sum.clicks + row.clicks,
+    landingPageViews: sum.landingPageViews + row.landingPageViews,
+  }), { spend: 0, impressions: 0, reach: 0, clicks: 0, landingPageViews: 0 });
+  const targetMarketRows = buildTargetMarketRows(traffic.geographies, traffic.cities, marketMetrics);
 
   return (
     <div>
@@ -40,6 +61,19 @@ export default async function ConversionPage() {
           <span className={`w-1.5 h-1.5 rounded-full ${traffic.available && !traffic.stale ? 'bg-blue-300' : 'bg-amber-400'}`} />
           Owned logs · {traffic.available ? (traffic.stale ? 'stale' : 'live') : 'unavailable'}
         </div>
+      </div>
+
+      <h2 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">30-Day Advertising</h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <MetricCard
+          title="Meta Spend"
+          value={marketCurrencies.length <= 1 ? fmtCurrency(marketTotals.spend, marketCurrency) : 'Mixed'}
+          subtitle={`${fmtNumber(marketMetrics.length)} countries with delivery`}
+          accent="gold"
+        />
+        <MetricCard title="Impressions" value={fmtNumber(marketTotals.impressions)} subtitle={`${fmtNumber(marketTotals.reach)} reach`} accent="blue" />
+        <MetricCard title="Ad Clicks" value={fmtNumber(marketTotals.clicks)} subtitle={`${fmtPct(marketTotals.clicks, marketTotals.impressions)} CTR`} accent="blue" />
+        <MetricCard title="Meta LPV" value={fmtNumber(marketTotals.landingPageViews)} subtitle={`${fmtPct(marketTotals.landingPageViews, marketTotals.clicks)} click -> landing`} accent="green" />
       </div>
 
       <h2 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Owned Funnel</h2>
@@ -58,6 +92,85 @@ export default async function ConversionPage() {
         resolution={traffic.geographyResolution}
         marketMetrics={marketMetrics}
       />
+
+      <section className="mb-8 rounded-xl border border-slate-800 bg-gray-900 p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-100">Target Market Success</h2>
+            <p className="mt-1 text-xs text-slate-500">NZ, Australia and Hong Kong delivery joined to owned landing traffic.</p>
+          </div>
+          <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
+            HK target visible
+          </span>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-3">
+          {targetMarketRows.map((row) => (
+            <div key={row.code} className="rounded-lg border border-slate-800 bg-slate-950/55 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="rounded-md px-2 py-1 text-[10px] font-black tracking-wider text-slate-950" style={{ backgroundColor: row.colour }}>
+                    {row.short}
+                  </span>
+                  <p className="mt-3 truncate text-sm font-bold text-slate-200">{row.name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-black tabular-nums text-white">{fmtNumber(row.metaLandingPageViews)}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Meta LPV</p>
+                </div>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
+                <div className="h-full rounded-full" style={{ width: `${Math.min(100, row.sharePct)}%`, backgroundColor: row.colour }} />
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                <div><p className="text-slate-600">Owned sessions</p><p className="font-bold tabular-nums text-blue-300">{fmtNumber(row.ownedSessions)}</p></div>
+                <div><p className="text-slate-600">Areas</p><p className="font-bold tabular-nums text-cyan-300">{fmtNumber(row.areas)}</p></div>
+                <div><p className="text-slate-600">Clicks</p><p className="font-bold tabular-nums text-slate-200">{fmtNumber(row.clicks)}</p></div>
+                <div><p className="text-slate-600">Spend</p><p className="font-bold tabular-nums text-slate-200">{fmtCurrency(row.spend, row.currency)}</p></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-8 rounded-xl border border-slate-800 bg-gray-900 p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-100">Source Success</h2>
+            <p className="mt-1 text-xs text-slate-500">Traffic sources clocked from owned landing logs.</p>
+          </div>
+          <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-300">
+            {fmtNumber(sourceSuccess.campaigns)} campaigns
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          {sourceSuccess.rows.map((row) => (
+            <div key={row.platform}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate font-semibold capitalize text-slate-300">{row.platform}</span>
+                <span className="font-black tabular-nums text-white">
+                  {fmtNumber(row.landingSessions)} / {fmtNumber(row.campaigns)} campaigns
+                </span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
+                <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.min(100, row.sharePct)}%` }} />
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
+                <div><p className="text-slate-600">Signups</p><p className="font-bold tabular-nums text-emerald-300">{fmtNumber(row.signups)}</p></div>
+                <div><p className="text-slate-600">Trials</p><p className="font-bold tabular-nums text-emerald-300">{fmtNumber(row.trials)}</p></div>
+                <div><p className="text-slate-600">Verified</p><p className="font-bold tabular-nums text-emerald-300">{fmtNumber(row.verifiedTrials)}</p></div>
+                <div><p className="text-slate-600">Paid</p><p className="font-bold tabular-nums text-amber-300">{fmtNumber(row.conversions)}</p></div>
+              </div>
+            </div>
+          ))}
+          {!sourceSuccess.rows.length && (
+            <p className="rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-500">
+              Source success will appear after owned landing traffic is aggregated.
+            </p>
+          )}
+        </div>
+      </section>
 
       <section className="mb-8 rounded-xl border border-slate-800 bg-gray-900 p-5">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">

@@ -2,6 +2,7 @@ import MetricCard, { PageTitle } from '@/components/MetricCard';
 import { fetchCoreAuthSummary } from '@/lib/betmanCore';
 import { fmtNumber } from '@/lib/calculations';
 import { normalizeConversionTraffic } from '@/lib/hqConversion';
+import { fetchMetaMarketMetrics } from '@/lib/metaAds';
 import LandingMap from './LandingMap';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +12,10 @@ function fmtPct(numerator: number, denominator: number): string {
 }
 
 export default async function ConversionPage() {
-  const summary = await fetchCoreAuthSummary().catch(() => null);
+  const [summary, marketMetrics] = await Promise.all([
+    fetchCoreAuthSummary().catch(() => null),
+    fetchMetaMarketMetrics().catch(() => []),
+  ]);
   const traffic = normalizeConversionTraffic(summary);
   const totals = traffic.campaigns.reduce((sum, row) => ({
     landingSessions: sum.landingSessions + row.landingSessions,
@@ -50,7 +54,7 @@ export default async function ConversionPage() {
         rows={traffic.geographies}
         cities={traffic.cities}
         resolution={traffic.geographyResolution}
-        marketMetrics={[]}
+        marketMetrics={marketMetrics}
       />
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
@@ -104,4 +108,3 @@ export default async function ConversionPage() {
     </div>
   );
 }
-

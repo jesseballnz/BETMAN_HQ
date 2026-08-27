@@ -1,6 +1,7 @@
 import MetricCard, { PageTitle } from '@/components/MetricCard';
 import { fetchCoreAuthSummary } from '@/lib/betmanCore';
 import { fmtNumber } from '@/lib/calculations';
+import { buildGeoSuccessSummary } from '@/lib/geoSuccess';
 import { normalizeConversionTraffic } from '@/lib/hqConversion';
 import { fetchMetaMarketMetrics } from '@/lib/metaAds';
 import LandingMap from './LandingMap';
@@ -24,6 +25,7 @@ export default async function ConversionPage() {
     verifiedTrials: sum.verifiedTrials + row.verifiedTrials,
     conversions: sum.conversions + row.conversions,
   }), { landingSessions: 0, signups: 0, trials: 0, verifiedTrials: 0, conversions: 0 });
+  const geoSuccess = buildGeoSuccessSummary(traffic.geographies, traffic.cities, totals.landingSessions);
 
   return (
     <div>
@@ -56,6 +58,56 @@ export default async function ConversionPage() {
         resolution={traffic.geographyResolution}
         marketMetrics={marketMetrics}
       />
+
+      <section className="mb-8 rounded-xl border border-slate-800 bg-gray-900 p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-100">Geo Success</h2>
+            <p className="mt-1 text-xs text-slate-500">Countries and areas clocked from owned landing traffic.</p>
+          </div>
+          <span className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1 text-xs font-bold text-cyan-300">
+            {fmtNumber(geoSuccess.areas)} areas
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          {geoSuccess.rows.slice(0, 8).map((row) => (
+            <div key={row.countryCode}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate font-semibold text-slate-300">
+                  {row.country} <span className="text-slate-600">{row.countryCode}</span>
+                </span>
+                <span className="font-black tabular-nums text-white">
+                  {fmtNumber(row.landingSessions)} / {fmtNumber(row.areas)} areas
+                </span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
+                <div className="h-full rounded-full bg-cyan-400" style={{ width: `${Math.min(100, row.sharePct)}%` }} />
+              </div>
+            </div>
+          ))}
+          {!geoSuccess.rows.length && (
+            <p className="rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-500">
+              Geo success will appear after owned landing traffic is aggregated.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-800 pt-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-600">Landings</p>
+            <p className="text-lg font-black text-white">{fmtNumber(geoSuccess.landingSessions)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-600">Countries</p>
+            <p className="text-lg font-black text-cyan-300">{fmtNumber(geoSuccess.countries)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-slate-600">Areas</p>
+            <p className="text-lg font-black text-cyan-300">{fmtNumber(geoSuccess.areas)}</p>
+          </div>
+        </div>
+      </section>
 
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-4">

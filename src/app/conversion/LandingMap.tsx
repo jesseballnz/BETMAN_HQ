@@ -199,7 +199,7 @@ export default function LandingMap({ rows, cities, resolution, marketMetrics }: 
                   >
                     {fmtNumber(total)}
                   </button>
-                  {hasMetaViews && (
+                  {hasMetaViews && ownedSessions > 0 && (
                     <p className="mt-1 text-[10px] text-slate-500">
                       {fmtNumber(ownedSessions)} owned attributed session{ownedSessions === 1 ? '' : 's'}
                     </p>

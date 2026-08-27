@@ -11,6 +11,11 @@ export interface Assumptions {
   radioAdRevenue: number;           // monthly radio ad revenue
   sponsorshipRevenue: number;       // monthly sponsorship
   dayPassSalesPerMonth: number;     // avg day passes per month
+  stridesReportPriceNZD: number;    // average Strides report sale
+  stridesKarakaSales: number;       // forecast Karaka Strides sales
+  stridesGoldCoastSales: number;    // forecast Gold Coast Strides sales
+  terminalUnitPriceNZD: number;     // BETMAN Terminal unit price
+  terminalSalesPerMonth: number;    // avg terminal sales per month
   contentCommunityNZD: number;      // Content & Community monthly
   administrationNZD: number;        // Administration monthly
   softwareNZD: number;              // Software monthly
@@ -32,6 +37,11 @@ export const DEFAULT_ASSUMPTIONS: Assumptions = {
   radioAdRevenue: 500,
   sponsorshipRevenue: 1000,
   dayPassSalesPerMonth: 50,
+  stridesReportPriceNZD: 250,
+  stridesKarakaSales: 24,
+  stridesGoldCoastSales: 36,
+  terminalUnitPriceNZD: 250,
+  terminalSalesPerMonth: 10,
   contentCommunityNZD: 1500,
   administrationNZD: 500,
   softwareNZD: 300,
@@ -40,6 +50,9 @@ export const DEFAULT_ASSUMPTIONS: Assumptions = {
   openingCashNZD: 5000,
   tentOpeningBalanceNZD: 20000,
 };
+
+export const FOUNDERS = ['Jesse', 'Keanu', 'Dev', 'Bobby'] as const;
+export const FOUNDER_COUNT = FOUNDERS.length;
 
 // ─── Salary Tier ───────────────────────────────────────────────────────────────
 
@@ -70,7 +83,7 @@ export type Milestone = typeof MILESTONES[number];
 
 export interface MonthlyForecast {
   month: number;              // 1–12
-  monthLabel: string;         // "Jan", "Feb", ...
+  monthLabel: string;         // BETMAN operating year label: "Jun", "Jul", ...
   openingSubscribers: number;
   newSubscribers: number;
   lostSubscribers: number;
@@ -81,6 +94,9 @@ export interface MonthlyForecast {
   dayPassRevenue: number;
   radioAdRevenue: number;
   sponsorshipRevenue: number;
+  stridesKarakaRevenue: number;
+  stridesGoldCoastRevenue: number;
+  betmanTerminalsRevenue: number;
   totalRevenue: number;
   // Expenses
   hostingAiElevenLabsExpense: number;

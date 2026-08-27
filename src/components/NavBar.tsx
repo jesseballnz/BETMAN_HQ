@@ -11,12 +11,18 @@ const NAV_LINKS = [
   { href: '/salary', label: 'Salary' },
   { href: '/tent', label: 'TENT' },
   { href: '/conversion', label: 'Conversion' },
+  { href: '/users', label: 'Users' },
   { href: '/assumptions', label: 'Assumptions' },
   { href: '/kpi', label: 'KPIs' },
 ];
 
 export default function NavBar() {
   const pathname = usePathname();
+
+  async function signOut() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.assign('/login');
+  }
 
   return (
     <nav className="bg-gray-900 border-b border-gray-800 sticky top-0 z-50">
@@ -46,6 +52,13 @@ export default function NavBar() {
                 </Link>
               );
             })}
+            <button
+              type="button"
+              onClick={signOut}
+              className="ml-2 whitespace-nowrap rounded-lg border border-slate-700 px-3 py-1.5 text-sm font-medium text-slate-300 transition-colors hover:bg-gray-800 hover:text-white"
+            >
+              Sign out
+            </button>
           </div>
         </div>
       </div>

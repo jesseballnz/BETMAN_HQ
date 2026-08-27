@@ -8,6 +8,17 @@ export interface MetaMarketMetric {
   landingPageViews: number;
 }
 
+export interface MetaCampaignMetric {
+  campaignId: string;
+  campaign: string;
+  currency: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  landingPageViews: number;
+}
+
 interface MetaAction {
   action_type?: string;
   value?: string | number;
@@ -15,6 +26,8 @@ interface MetaAction {
 
 interface MetaInsightRow {
   account_currency?: string;
+  campaign_id?: string;
+  campaign_name?: string;
   country?: string;
   spend?: string | number;
   impressions?: string | number;
@@ -131,7 +144,39 @@ export function aggregateMetaMarketMetrics(rows: MetaInsightRow[]): MetaMarketMe
   return Array.from(byCountry.values()).sort((a, b) => b.landingPageViews - a.landingPageViews);
 }
 
-async function fetchMetaInsightsForAccount(accountId: string, token: string): Promise<MetaInsightRow[]> {
+export function aggregateMetaCampaignMetrics(rows: MetaInsightRow[]): MetaCampaignMetric[] {
+  const byCampaign = new Map<string, MetaCampaignMetric>();
+
+  for (const row of rows) {
+    const campaignId = String(row.campaign_id || row.campaign_name || 'unassigned').trim();
+    if (!campaignId) continue;
+
+    const campaign = String(row.campaign_name || row.campaign_id || 'unassigned').trim();
+    const currency = String(row.account_currency || process.env.META_ADS_CURRENCY || 'NZD').toUpperCase();
+    const key = `${campaignId}:${currency}`;
+    const current = byCampaign.get(key) ?? {
+      campaignId,
+      campaign,
+      currency,
+      spend: 0,
+      impressions: 0,
+      reach: 0,
+      clicks: 0,
+      landingPageViews: 0,
+    };
+
+    current.spend += toNumber(row.spend);
+    current.impressions += toNumber(row.impressions);
+    current.reach += toNumber(row.reach);
+    current.clicks += toNumber(row.inline_link_clicks ?? row.clicks);
+    current.landingPageViews += landingPageViews(row.actions);
+    byCampaign.set(key, current);
+  }
+
+  return Array.from(byCampaign.values()).sort((a, b) => b.clicks - a.clicks);
+}
+
+async function fetchMetaMarketInsightsForAccount(accountId: string, token: string): Promise<MetaInsightRow[]> {
   const version = process.env.META_ADS_API_VERSION || 'v20.0';
   const timeRange = defaultTimeRange();
   const rows: MetaInsightRow[] = [];
@@ -163,6 +208,37 @@ async function fetchMetaInsightsForAccount(accountId: string, token: string): Pr
   return rows;
 }
 
+async function fetchMetaCampaignInsightsForAccount(accountId: string, token: string): Promise<MetaInsightRow[]> {
+  const version = process.env.META_ADS_API_VERSION || 'v20.0';
+  const timeRange = defaultTimeRange();
+  const rows: MetaInsightRow[] = [];
+  let nextUrl: string | null = null;
+
+  const params = new URLSearchParams({
+    access_token: token,
+    level: 'campaign',
+    fields: 'campaign_id,campaign_name,account_currency,spend,impressions,reach,clicks,inline_link_clicks,actions',
+    time_range: JSON.stringify(timeRange),
+    limit: '500',
+  });
+
+  nextUrl = `https://graph.facebook.com/${version}/act_${accountId}/insights?${params.toString()}`;
+
+  while (nextUrl) {
+    const res = await fetch(nextUrl, { cache: 'no-store' });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Meta Ads campaign insights act_${accountId} -> ${res.status}: ${text}`);
+    }
+
+    const body = (await res.json()) as MetaInsightsResponse;
+    rows.push(...(body.data ?? []));
+    nextUrl = body.paging?.next ?? null;
+  }
+
+  return rows;
+}
+
 export async function fetchMetaMarketMetrics(): Promise<MetaMarketMetric[]> {
   const token = process.env.META_ADS_ACCESS_TOKEN;
   if (!token) return [];
@@ -172,8 +248,23 @@ export async function fetchMetaMarketMetrics(): Promise<MetaMarketMetric[]> {
   if (resolvedAccountIds.length === 0) return [];
 
   const rows = (await Promise.all(
-    resolvedAccountIds.map((accountId) => fetchMetaInsightsForAccount(accountId, token)),
+    resolvedAccountIds.map((accountId) => fetchMetaMarketInsightsForAccount(accountId, token)),
   )).flat();
 
   return aggregateMetaMarketMetrics(rows);
+}
+
+export async function fetchMetaCampaignMetrics(): Promise<MetaCampaignMetric[]> {
+  const token = process.env.META_ADS_ACCESS_TOKEN;
+  if (!token) return [];
+
+  const accountIds = configuredAdAccountIds();
+  const resolvedAccountIds = accountIds.length > 0 ? accountIds : await discoverAdAccountIds(token);
+  if (resolvedAccountIds.length === 0) return [];
+
+  const rows = (await Promise.all(
+    resolvedAccountIds.map((accountId) => fetchMetaCampaignInsightsForAccount(accountId, token)),
+  )).flat();
+
+  return aggregateMetaCampaignMetrics(rows);
 }

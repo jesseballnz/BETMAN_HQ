@@ -15,10 +15,11 @@ export default async function PnLPage() {
   const growthTargetForecast = buildMonthlyForecast(assumptions);
   const forecast = buildMonthlyForecast(
     assumptions,
-    live.source === 'stripe'
+        live.source === 'stripe'
       ? {
           activeWeeklySubscribers: live.activeWeeklySubscribers,
           dayPassSalesPerMonth: live.activeDayPassSalesPerMonth,
+          activeWeeklySubscribersByMonth: live.activeWeeklySubscribersByMonth,
         }
       : undefined,
   );

@@ -14,8 +14,6 @@ export const dynamic = 'force-dynamic';
 
 export default async function KpiPage() {
   const assumptions = await getAssumptions();
-  const forecast = buildMonthlyForecast(assumptions);
-  const kpis = buildKpiSnapshots(forecast, assumptions);
 
   // Parallel: live subscribers + BETMAN_DATA platform stats
   const [liveResult, statsResult, usageResult, tenantsResult] = await Promise.allSettled([
@@ -35,26 +33,35 @@ export default async function KpiPage() {
         uniqueAccounts: 0,
         activeAccounts: 0,
         passwordPendingAccounts: 0,
+        activeWeeklySubscribersByMonth: {},
         source: 'assumptions' as const,
         accountSource: 'unavailable' as const,
         isLive: false,
         fetchedAt: new Date().toISOString(),
       };
+  const forecast = buildMonthlyForecast(
+    assumptions,
+    live.source === 'stripe'
+      ? {
+          activeWeeklySubscribers: live.activeWeeklySubscribers,
+          dayPassSalesPerMonth: live.activeDayPassSalesPerMonth,
+          activeWeeklySubscribersByMonth: live.activeWeeklySubscribersByMonth,
+        }
+      : undefined,
+  );
+  const kpis = buildKpiSnapshots(forecast, assumptions);
   const platformStats: BetmanStatsOverview | null = statsResult.status === 'fulfilled' ? statsResult.value : null;
   const usageData = usageResult.status === 'fulfilled' ? usageResult.value : [];
   const tenants = tenantsResult.status === 'fulfilled' ? tenantsResult.value : [];
 
   const currentSubs = live.activeWeeklySubscribers;
+  const currentMonth = forecast.find((month) => month.isCurrent) || forecast[0];
   const dayPassSales = live.activeDayPassSalesPerMonth > 0
     ? live.activeDayPassSalesPerMonth
     : assumptions.dayPassSalesPerMonth;
 
   const mrr = Math.round(currentSubs * assumptions.weeklyPassPriceNZD * 4.33);
-  const totalRevenue =
-    mrr +
-    Math.round(dayPassSales * assumptions.dayPassPriceNZD) +
-    assumptions.radioAdRevenue +
-    assumptions.sponsorshipRevenue;
+  const totalRevenue = currentMonth.totalRevenue;
 
   const current = {
     activeWeeklySubscribers: currentSubs,

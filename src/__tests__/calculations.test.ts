@@ -4,6 +4,7 @@ import {
   getNextMilestone,
   calcWeeklySubRevenue,
   calcDayPassRevenue,
+  calcUnitRevenue,
   calcMonthlyRevenue,
   calcFounderSalariesTotal,
   calcTotalExpenses,
@@ -157,6 +158,12 @@ describe('calcDayPassRevenue', () => {
   });
 });
 
+describe('calcUnitRevenue', () => {
+  test('calculates BETMAN Terminal revenue at $250 per terminal', () => {
+    expect(calcUnitRevenue(10, 250)).toBe(2500);
+  });
+});
+
 describe('calcMonthlyRevenue', () => {
   test('calculates total monthly revenue correctly', () => {
     const subs = 75;
@@ -164,12 +171,13 @@ describe('calcMonthlyRevenue', () => {
     const expected =
       calcWeeklySubRevenue(subs, DEFAULT_ASSUMPTIONS.weeklyPassPriceNZD) +
       calcDayPassRevenue(DEFAULT_ASSUMPTIONS.dayPassSalesPerMonth, DEFAULT_ASSUMPTIONS.dayPassPriceNZD) +
+      calcUnitRevenue(DEFAULT_ASSUMPTIONS.terminalSalesPerMonth, DEFAULT_ASSUMPTIONS.terminalUnitPriceNZD) +
       DEFAULT_ASSUMPTIONS.radioAdRevenue +
       DEFAULT_ASSUMPTIONS.sponsorshipRevenue;
     expect(revenue).toBe(expected);
   });
 
-  test('includes all four revenue streams', () => {
+  test('includes recurring revenue streams', () => {
     const revenue = calcMonthlyRevenue(100, DEFAULT_ASSUMPTIONS);
     expect(revenue).toBeGreaterThan(
       calcWeeklySubRevenue(100, DEFAULT_ASSUMPTIONS.weeklyPassPriceNZD)
@@ -180,25 +188,25 @@ describe('calcMonthlyRevenue', () => {
 // ─── P&L Total Calculation Tests ──────────────────────────────────────────────
 
 describe('calcFounderSalariesTotal', () => {
-  test('returns $0 for under 500 subscribers (3 founders × $0)', () => {
+  test('returns $0 for under 500 subscribers (4 founders x $0)', () => {
     expect(calcFounderSalariesTotal(0)).toBe(0);
     expect(calcFounderSalariesTotal(499)).toBe(0);
   });
 
-  test('returns $3,000 for 500 subscribers (3 × $1,000)', () => {
-    expect(calcFounderSalariesTotal(500)).toBe(3000);
+  test('returns $4,000 for 500 subscribers (4 x $1,000)', () => {
+    expect(calcFounderSalariesTotal(500)).toBe(4000);
   });
 
-  test('returns $6,000 for 1,000 subscribers (3 × $2,000)', () => {
-    expect(calcFounderSalariesTotal(1000)).toBe(6000);
+  test('returns $8,000 for 1,000 subscribers (4 x $2,000)', () => {
+    expect(calcFounderSalariesTotal(1000)).toBe(8000);
   });
 
-  test('returns $10,500 for 2,000 subscribers (3 × $3,500)', () => {
-    expect(calcFounderSalariesTotal(2000)).toBe(10500);
+  test('returns $14,000 for 2,000 subscribers (4 x $3,500)', () => {
+    expect(calcFounderSalariesTotal(2000)).toBe(14000);
   });
 
-  test('returns $15,000 for 3,000 subscribers (3 × $5,000)', () => {
-    expect(calcFounderSalariesTotal(3000)).toBe(15000);
+  test('returns $20,000 for 3,000 subscribers (4 x $5,000)', () => {
+    expect(calcFounderSalariesTotal(3000)).toBe(20000);
   });
 });
 
@@ -219,8 +227,8 @@ describe('calcTotalExpenses', () => {
   test('increases expenses when salary tier unlocks', () => {
     const expensesAt0 = calcTotalExpenses(0, DEFAULT_ASSUMPTIONS);
     const expensesAt500 = calcTotalExpenses(500, DEFAULT_ASSUMPTIONS);
-    // At 500 subs, founder salaries = 3 × $1,000 = $3,000 more
-    expect(expensesAt500 - expensesAt0).toBe(3000);
+    // At 500 subs, founder salaries = 4 x $1,000 = $4,000 more
+    expect(expensesAt500 - expensesAt0).toBe(4000);
   });
 });
 
@@ -231,6 +239,55 @@ describe('buildMonthlyForecast P&L totals', () => {
 
   test('generates 12 months of forecast', () => {
     expect(forecast).toHaveLength(12);
+  });
+
+  test('uses BETMAN operating year labels from June to May', () => {
+    expect(forecast.map((month) => month.monthLabel)).toEqual([
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+    ]);
+  });
+
+  test('uses supplied live operating-month subscriber actuals before forecast targets', () => {
+    const liveForecast = buildMonthlyForecast(DEFAULT_ASSUMPTIONS, {
+      activeWeeklySubscribers: 4,
+      activeWeeklySubscribersByMonth: {
+        1: 2,
+        2: 5,
+        3: 4,
+      },
+    });
+
+    expect(liveForecast[0].monthLabel).toBe('Jun');
+    expect(liveForecast[0].activeWeeklySubscribers).toBe(2);
+    expect(liveForecast[1].monthLabel).toBe('Jul');
+    expect(liveForecast[1].activeWeeklySubscribers).toBe(5);
+    expect(liveForecast[2].monthLabel).toBe('Aug');
+    expect(liveForecast[2].activeWeeklySubscribers).toBe(4);
+    expect(liveForecast[3].monthLabel).toBe('Sep');
+    expect(liveForecast[3].activeWeeklySubscribers).toBe(2000);
+  });
+
+  test('adds Strides event revenue and monthly BETMAN Terminal revenue', () => {
+    const forecast = buildMonthlyForecast(DEFAULT_ASSUMPTIONS);
+    const january = forecast[7];
+
+    expect(january.monthLabel).toBe('Jan');
+    expect(january.stridesKarakaRevenue).toBe(6000);
+    expect(january.stridesGoldCoastRevenue).toBe(9000);
+    expect(forecast[0].betmanTerminalsRevenue).toBe(2500);
+    expect(forecast[0].stridesKarakaRevenue).toBe(0);
+    expect(forecast[0].stridesGoldCoastRevenue).toBe(0);
   });
 
   test('operating profit = total revenue - total expenses', () => {

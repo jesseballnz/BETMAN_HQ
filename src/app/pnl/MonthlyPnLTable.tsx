@@ -72,7 +72,7 @@ export function MonthlyPnLTable({ assumptions, fallbackSubscribers, forecast, li
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-slate-200 text-lg font-bold">Monthly</h2>
+          <h2 className="text-slate-200 text-lg font-bold">Forecast Users</h2>
           <p className="text-slate-500 text-sm mt-1">Enter forecast subscribers per month. Blank months use the growth target curve.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -184,4 +184,3 @@ export function MonthlyPnLTable({ assumptions, fallbackSubscribers, forecast, li
     </div>
   );
 }
-

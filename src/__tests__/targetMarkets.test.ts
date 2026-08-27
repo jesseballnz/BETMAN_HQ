@@ -16,6 +16,10 @@ describe('buildTargetMarketRows', () => {
         { countryCode: 'AU', currency: 'NZD', spend: 39.31, impressions: 4269, reach: 2861, clicks: 90, landingPageViews: 77 },
         { countryCode: 'HK', currency: 'NZD', spend: 13.83, impressions: 1593, reach: 1310, clicks: 59, landingPageViews: 50 },
       ],
+      [
+        { email: 'trial@example.com', country: 'Hong Kong', planType: 'tester', trialStartedAt: '2026-08-27T20:26:15.842Z', subscriptionActive: true },
+        { email: 'customer@example.com', country: 'HK', planType: 'weekly', trialStartedAt: '2026-08-20T20:26:15.842Z', subscriptionActive: true },
+      ],
     );
 
     expect(rows.map((row) => row.code)).toEqual(['NZ', 'AU', 'HK']);
@@ -26,6 +30,8 @@ describe('buildTargetMarketRows', () => {
       areas: 0,
       clicks: 59,
       spend: 13.83,
+      trialCount: 2,
+      customerCount: 1,
     });
   });
 });

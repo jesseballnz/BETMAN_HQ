@@ -2,8 +2,8 @@ import MetricCard, { PageTitle } from '@/components/MetricCard';
 import { fetchCoreAuthSummary } from '@/lib/betmanCore';
 import { fmtNumber } from '@/lib/calculations';
 import { buildGeoSuccessSummary } from '@/lib/geoSuccess';
-import { normalizeConversionTraffic } from '@/lib/hqConversion';
-import { fetchMetaMarketMetrics } from '@/lib/metaAds';
+import { normalizeConversionTraffic, type ConversionTrafficCampaign } from '@/lib/hqConversion';
+import { fetchMetaCampaignMetrics, fetchMetaMarketMetrics, type MetaCampaignMetric } from '@/lib/metaAds';
 import { buildSourceSuccessSummary } from '@/lib/sourceSuccess';
 import { buildTargetMarketRows } from '@/lib/targetMarkets';
 import LandingMap from './LandingMap';
@@ -22,10 +22,110 @@ function fmtCurrency(value: number, currency: string): string {
   }).format(value);
 }
 
+function isPaidUser(user: { planType?: string; subscriptionActive?: boolean }): boolean {
+  if (!user.subscriptionActive) return false;
+  const plan = String(user.planType || '').trim().toLowerCase();
+  return !['tester', 'trial', 'free'].includes(plan);
+}
+
+function campaignKey(value: string): string {
+  return String(value || 'unassigned').trim().toLowerCase();
+}
+
+function buildTopCampaignRows(ownedCampaigns: ConversionTrafficCampaign[], metaCampaigns: MetaCampaignMetric[]) {
+  const rows = new Map<string, {
+    key: string;
+    platform: string;
+    campaign: string;
+    currency: string;
+    spend: number;
+    impressions: number;
+    reach: number;
+    clicks: number;
+    landingPageViews: number;
+    landingSessions: number;
+    signups: number;
+    trials: number;
+    verifiedTrials: number;
+    conversions: number;
+  }>();
+
+  for (const row of metaCampaigns) {
+    const key = campaignKey(row.campaignId || row.campaign);
+    const current = rows.get(key) ?? {
+      key,
+      platform: 'meta',
+      campaign: row.campaign,
+      currency: row.currency,
+      spend: 0,
+      impressions: 0,
+      reach: 0,
+      clicks: 0,
+      landingPageViews: 0,
+      landingSessions: 0,
+      signups: 0,
+      trials: 0,
+      verifiedTrials: 0,
+      conversions: 0,
+    };
+    current.spend += row.spend;
+    current.impressions += row.impressions;
+    current.reach += row.reach;
+    current.clicks += row.clicks;
+    current.landingPageViews += row.landingPageViews;
+    rows.set(key, current);
+  }
+
+  for (const row of ownedCampaigns) {
+    const key = campaignKey(row.campaign);
+    const current = rows.get(key) ?? {
+      key,
+      platform: row.platform || 'unattributed',
+      campaign: row.campaign || 'unassigned',
+      currency: 'NZD',
+      spend: 0,
+      impressions: 0,
+      reach: 0,
+      clicks: 0,
+      landingPageViews: 0,
+      landingSessions: 0,
+      signups: 0,
+      trials: 0,
+      verifiedTrials: 0,
+      conversions: 0,
+    };
+    current.platform = current.platform === 'meta' ? row.platform || current.platform : current.platform;
+    current.landingSessions += row.landingSessions;
+    current.signups += row.signups;
+    current.trials += row.trials;
+    current.verifiedTrials += row.verifiedTrials;
+    current.conversions += row.conversions;
+    rows.set(key, current);
+  }
+
+  return Array.from(rows.values())
+    .map((row) => ({
+      ...row,
+      ctrPct: row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0,
+      clickToLandingPct: row.clicks > 0 ? (row.landingPageViews / row.clicks) * 100 : 0,
+      signupRatePct: row.landingSessions > 0 ? (row.signups / row.landingSessions) * 100 : 0,
+      trialRatePct: row.signups > 0 ? (row.trials / row.signups) * 100 : 0,
+    }))
+    .sort((a, b) => {
+      const outcomeDiff = b.trials - a.trials || b.signups - a.signups || b.conversions - a.conversions;
+      if (outcomeDiff !== 0) return outcomeDiff;
+      const ctrDiff = b.ctrPct - a.ctrPct;
+      if (Math.abs(ctrDiff) > 0.001) return ctrDiff;
+      return b.clicks - a.clicks;
+    })
+    .slice(0, 8);
+}
+
 export default async function ConversionPage() {
-  const [summary, marketMetrics] = await Promise.all([
+  const [summary, marketMetrics, campaignMetrics] = await Promise.all([
     fetchCoreAuthSummary().catch(() => null),
     fetchMetaMarketMetrics().catch(() => []),
+    fetchMetaCampaignMetrics().catch(() => []),
   ]);
   const traffic = normalizeConversionTraffic(summary);
   const totals = traffic.campaigns.reduce((sum, row) => ({
@@ -46,7 +146,12 @@ export default async function ConversionPage() {
     clicks: sum.clicks + row.clicks,
     landingPageViews: sum.landingPageViews + row.landingPageViews,
   }), { spend: 0, impressions: 0, reach: 0, clicks: 0, landingPageViews: 0 });
-  const targetMarketRows = buildTargetMarketRows(traffic.geographies, traffic.cities, marketMetrics);
+  const provisionedUsers = summary?.provisionedUsers || [];
+  const signupAccountCount = provisionedUsers.length || totals.signups;
+  const trialAccountCount = provisionedUsers.filter((user) => user.trialStartedAt).length || totals.trials;
+  const paidAccountCount = provisionedUsers.filter(isPaidUser).length || totals.conversions;
+  const targetMarketRows = buildTargetMarketRows(traffic.geographies, traffic.cities, marketMetrics, provisionedUsers);
+  const topCampaignRows = buildTopCampaignRows(traffic.campaigns, campaignMetrics);
 
   return (
     <div>
@@ -81,9 +186,15 @@ export default async function ConversionPage() {
         <a href="#landing-map" className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400" aria-label="View landing session map">
           <MetricCard title="Landing Sessions" value={fmtNumber(totals.landingSessions)} subtitle="Deduplicated campaign visits · View map" accent="blue" />
         </a>
-        <MetricCard title="Signups" value={fmtNumber(totals.signups)} subtitle={`${fmtPct(totals.signups, totals.landingSessions)} signup rate`} accent="green" />
-        <MetricCard title="Trials" value={fmtNumber(totals.trials)} subtitle={`${fmtNumber(totals.verifiedTrials)} verified`} accent="green" />
-        <MetricCard title="Paid" value={fmtNumber(totals.conversions)} subtitle={`${fmtPct(totals.conversions, totals.trials)} trial conversion`} accent="gold" />
+        <a href="/users?filter=signups" className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400" aria-label="View signup accounts">
+          <MetricCard title="Signups" value={fmtNumber(signupAccountCount)} subtitle={`${fmtPct(totals.signups, totals.landingSessions)} 30-day signup rate`} accent="green" />
+        </a>
+        <a href="/users?filter=trials" className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400" aria-label="View trial accounts">
+          <MetricCard title="Trials" value={fmtNumber(trialAccountCount)} subtitle={`${fmtNumber(totals.verifiedTrials)} verified in 30-day funnel`} accent="green" />
+        </a>
+        <a href="/users?filter=paid" className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400" aria-label="View paid customers">
+          <MetricCard title="Paid" value={fmtNumber(paidAccountCount)} subtitle={`${fmtPct(totals.conversions, totals.trials)} 30-day trial conversion`} accent="gold" />
+        </a>
       </div>
 
       <LandingMap
@@ -96,8 +207,59 @@ export default async function ConversionPage() {
       <section className="mb-8 rounded-xl border border-slate-800 bg-gray-900 p-5">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
+            <h2 className="text-lg font-bold text-slate-100">Top Campaigns</h2>
+            <p className="mt-1 text-xs text-slate-500">Campaigns ranked by trials, signups and click-through quality.</p>
+          </div>
+          <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-300">
+            Sales filter
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px]">
+            <thead>
+              <tr className="border-b border-slate-700 text-xs text-slate-400">
+                <th className="px-3 py-2 text-left">Campaign</th>
+                <th className="px-3 py-2 text-left">Source</th>
+                <th className="px-3 py-2 text-right">Spend</th>
+                <th className="px-3 py-2 text-right">CTR</th>
+                <th className="px-3 py-2 text-right">Click &gt; LPV</th>
+                <th className="px-3 py-2 text-right">Landings</th>
+                <th className="px-3 py-2 text-right">Signup Rate</th>
+                <th className="px-3 py-2 text-right">Signups</th>
+                <th className="px-3 py-2 text-right">Trials</th>
+                <th className="px-3 py-2 text-right">Paid</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topCampaignRows.map((row) => (
+                <tr key={row.key} className="border-b border-slate-800 text-sm">
+                  <td className="max-w-[260px] truncate px-3 py-3 font-semibold text-slate-200" title={row.campaign}>{row.campaign}</td>
+                  <td className="px-3 py-3 capitalize text-slate-400">{row.platform}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-300">{row.spend > 0 ? fmtCurrency(row.spend, row.currency) : '-'}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-blue-300">{row.impressions > 0 ? `${row.ctrPct.toFixed(2)}%` : '-'}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-cyan-300">{row.clicks > 0 ? `${row.clickToLandingPct.toFixed(1)}%` : '-'}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-300">{fmtNumber(row.landingSessions)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-emerald-300">{row.landingSessions > 0 ? `${row.signupRatePct.toFixed(1)}%` : '-'}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-emerald-300">{fmtNumber(row.signups)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-emerald-300">{fmtNumber(row.trials)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-amber-300">{fmtNumber(row.conversions)}</td>
+                </tr>
+              ))}
+              {!topCampaignRows.length && (
+                <tr>
+                  <td colSpan={10} className="px-3 py-10 text-center text-slate-500">Campaign summary will appear after Meta and owned campaign rows are available.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mb-8 rounded-xl border border-slate-800 bg-gray-900 p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
             <h2 className="text-lg font-bold text-slate-100">Target Market Success</h2>
-            <p className="mt-1 text-xs text-slate-500">NZ, Australia and Hong Kong delivery joined to owned landing traffic.</p>
+            <p className="mt-1 text-xs text-slate-500">NZ, Australia and Hong Kong delivery joined to owned trial and customer accounts.</p>
           </div>
           <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
             HK target visible
@@ -124,8 +286,8 @@ export default async function ConversionPage() {
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
                 <div><p className="text-slate-600">Owned sessions</p><p className="font-bold tabular-nums text-blue-300">{fmtNumber(row.ownedSessions)}</p></div>
-                <div><p className="text-slate-600">Areas</p><p className="font-bold tabular-nums text-cyan-300">{fmtNumber(row.areas)}</p></div>
-                <div><p className="text-slate-600">Clicks</p><p className="font-bold tabular-nums text-slate-200">{fmtNumber(row.clicks)}</p></div>
+                <div><p className="text-slate-600">Trial Count</p><p className="font-bold tabular-nums text-emerald-300">{fmtNumber(row.trialCount)}</p></div>
+                <div><p className="text-slate-600">Customer Count</p><p className="font-bold tabular-nums text-amber-300">{fmtNumber(row.customerCount)}</p></div>
                 <div><p className="text-slate-600">Spend</p><p className="font-bold tabular-nums text-slate-200">{fmtCurrency(row.spend, row.currency)}</p></div>
               </div>
             </div>

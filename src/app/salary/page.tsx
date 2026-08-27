@@ -1,12 +1,10 @@
 import { getAssumptions } from '@/data/store';
 import { getLiveSubscriberCounts } from '@/data/liveCounts';
 import { buildMonthlyForecast, getSalaryTier, fmtNZD, fmtNumber } from '@/lib/calculations';
-import { SALARY_TIERS } from '@/lib/types';
+import { FOUNDER_COUNT, FOUNDERS, SALARY_TIERS } from '@/lib/types';
 import { PageTitle } from '@/components/MetricCard';
 
 export const dynamic = 'force-dynamic';
-
-const FOUNDERS = ['Jesse', 'Dev', 'Bobby'] as const;
 
 export default async function SalaryPage() {
   const assumptions = getAssumptions();
@@ -31,7 +29,7 @@ export default async function SalaryPage() {
       </p>
 
       {/* Current Status */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         {FOUNDERS.map((founder) => (
           <div key={founder} className="bg-gray-900 border border-gray-800 rounded-xl p-6 text-center">
             <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
@@ -56,7 +54,7 @@ export default async function SalaryPage() {
               <tr className="text-slate-400 text-xs border-b border-gray-700">
                 <th className="text-left py-2 px-3">Subscribers</th>
                 <th className="text-right py-2 px-3">Per Founder / Month</th>
-                <th className="text-right py-2 px-3">Total (3 Founders)</th>
+                <th className="text-right py-2 px-3">Total ({FOUNDER_COUNT} Founders)</th>
                 <th className="text-right py-2 px-3">Annual (Each)</th>
                 <th className="text-left py-2 px-3">Status</th>
               </tr>
@@ -78,7 +76,7 @@ export default async function SalaryPage() {
                       {tier.monthlyPerFounder < 0 ? 'Board Review' : fmtNZD(tier.monthlyPerFounder)}
                     </td>
                     <td className="py-3 px-3 text-right tabular-nums text-slate-300">
-                      {tier.monthlyPerFounder < 0 ? '—' : fmtNZD(3 * tier.monthlyPerFounder)}
+                      {tier.monthlyPerFounder < 0 ? '—' : fmtNZD(FOUNDER_COUNT * tier.monthlyPerFounder)}
                     </td>
                     <td className="py-3 px-3 text-right tabular-nums text-slate-400">
                       {tier.monthlyPerFounder < 0 ? '—' : fmtNZD(perFounder * 12)}

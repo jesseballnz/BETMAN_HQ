@@ -13,8 +13,6 @@ import {
   getNextSalaryTier,
   getNextMilestone,
   calcWeeklySubRevenue,
-  calcDayPassRevenue,
-  calcTotalExpenses,
   fmtNZD,
   fmtNumber,
 } from '@/lib/calculations';
@@ -43,6 +41,7 @@ export default async function DashboardPage() {
         uniqueAccounts: 0,
         activeAccounts: 0,
         passwordPendingAccounts: 0,
+        activeWeeklySubscribersByMonth: {},
         source: 'assumptions' as const,
         accountSource: 'unavailable' as const,
         isLive: false,
@@ -55,29 +54,24 @@ export default async function DashboardPage() {
   const currentSubs = liveData.activeWeeklySubscribers;
   const forecast = buildMonthlyForecast(
     assumptions,
-    liveData.source === 'stripe'
-      ? {
-          activeWeeklySubscribers: liveData.activeWeeklySubscribers,
-          dayPassSalesPerMonth: liveData.activeDayPassSalesPerMonth,
-        }
-      : undefined,
+      liveData.source === 'stripe'
+        ? {
+            activeWeeklySubscribers: liveData.activeWeeklySubscribers,
+            dayPassSalesPerMonth: liveData.activeDayPassSalesPerMonth,
+            activeWeeklySubscribersByMonth: liveData.activeWeeklySubscribersByMonth,
+          }
+        : undefined,
   );
+  const currentMonth = forecast.find((month) => month.isCurrent) || forecast[0];
   const latestMonth = forecast[forecast.length - 1];
 
   const currentTier = getSalaryTier(currentSubs);
   const nextTier = getNextSalaryTier(currentSubs);
   const nextMilestone = getNextMilestone(payingCustomers);
-  const dayPassSales = liveData.source === 'stripe'
-    ? liveData.activeDayPassSalesPerMonth
-    : assumptions.dayPassSalesPerMonth;
 
   const mrr = calcWeeklySubRevenue(currentSubs, assumptions.weeklyPassPriceNZD);
-  const monthlyRevenue =
-    mrr +
-    calcDayPassRevenue(dayPassSales, assumptions.dayPassPriceNZD) +
-    assumptions.radioAdRevenue +
-    assumptions.sponsorshipRevenue;
-  const totalExpenses = calcTotalExpenses(currentSubs, assumptions);
+  const monthlyRevenue = currentMonth.totalRevenue;
+  const totalExpenses = currentMonth.totalExpenses;
   const operatingProfit = monthlyRevenue - totalExpenses;
   const cashPosition = assumptions.openingCashNZD + operatingProfit;
 

@@ -1,4 +1,5 @@
 import { APAC_MARKET_CENTRES } from '@/lib/geoProjection';
+import type { ProvisionedUser } from '@/lib/betmanCore';
 import type { ConversionTrafficCity, ConversionTrafficGeography } from '@/lib/hqConversion';
 import type { MetaMarketMetric } from '@/lib/metaAds';
 
@@ -14,22 +15,37 @@ export interface TargetMarketRow {
   reach: number;
   clicks: number;
   ownedSessions: number;
+  trialCount: number;
+  customerCount: number;
   areas: number;
   sharePct: number;
 }
 
 function countryCode(value: string): string {
-  return value.toUpperCase();
+  const normalized = value.trim().toUpperCase();
+  if (['AUS', 'AUSTRALIA'].includes(normalized)) return 'AU';
+  if (['NZL', 'NEW ZEALAND', 'AOTEAROA'].includes(normalized)) return 'NZ';
+  if (['HKG', 'HONG KONG'].includes(normalized)) return 'HK';
+  return normalized;
+}
+
+function isCustomer(user: ProvisionedUser): boolean {
+  if (!user.subscriptionActive) return false;
+  const plan = String(user.planType || '').trim().toLowerCase();
+  return !['tester', 'trial', 'free'].includes(plan);
 }
 
 export function buildTargetMarketRows(
   geographies: ConversionTrafficGeography[],
   cities: ConversionTrafficCity[],
   marketMetrics: MetaMarketMetric[],
+  provisionedUsers: ProvisionedUser[] = [],
 ): TargetMarketRow[] {
   const geographyByCountry = new Map(geographies.map((row) => [countryCode(row.countryCode), row]));
   const areaCounts = new Map<string, number>();
   const metaByCountry = new Map<string, MetaMarketMetric>();
+  const trialCounts = new Map<string, number>();
+  const customerCounts = new Map<string, number>();
 
   for (const city of cities) {
     const code = countryCode(city.countryCode);
@@ -55,6 +71,17 @@ export function buildTargetMarketRows(
     metaByCountry.set(code, current);
   }
 
+  for (const user of provisionedUsers) {
+    const code = countryCode(user.country || '');
+    if (!code) continue;
+    if (user.trialStartedAt) {
+      trialCounts.set(code, (trialCounts.get(code) ?? 0) + 1);
+    }
+    if (isCustomer(user)) {
+      customerCounts.set(code, (customerCounts.get(code) ?? 0) + 1);
+    }
+  }
+
   const totalMetaLandingPageViews = APAC_MARKET_CENTRES.reduce(
     (sum, market) => sum + (metaByCountry.get(market.code)?.landingPageViews ?? 0),
     0,
@@ -76,6 +103,8 @@ export function buildTargetMarketRows(
       reach: meta?.reach ?? 0,
       clicks: meta?.clicks ?? 0,
       ownedSessions: geographyByCountry.get(market.code)?.landingSessions ?? 0,
+      trialCount: trialCounts.get(market.code) ?? 0,
+      customerCount: customerCounts.get(market.code) ?? 0,
       areas: areaCounts.get(market.code) ?? 0,
       sharePct: totalMetaLandingPageViews > 0 ? (metaLandingPageViews / totalMetaLandingPageViews) * 100 : 0,
     };

@@ -22,9 +22,29 @@ export interface CoreAuthSummary {
   apiKeysActive: number;
   planCounts: Record<string, number>;
   statusCounts: Record<string, number>;
-  provisionedUsers?: unknown[];
+  provisionedUsers?: ProvisionedUser[];
   trialFunnel?: Record<string, unknown>;
   conversionTraffic?: Record<string, unknown>;
+}
+
+export interface ProvisionedUser {
+  email: string;
+  name?: string;
+  accountStatus?: string;
+  planType?: string;
+  subscriptionStatus?: string;
+  subscriptionActive?: boolean;
+  createdAt?: string;
+  verifiedAt?: string;
+  passwordPending?: boolean;
+  accessExpiresAt?: string;
+  trialStartedAt?: string;
+  trialExpiresAt?: string;
+  source?: string;
+  campaign?: string;
+  country?: string;
+  bettorType?: string;
+  bettingFrequency?: string;
 }
 
 export async function fetchCoreAuthSummary(): Promise<CoreAuthSummary | null> {

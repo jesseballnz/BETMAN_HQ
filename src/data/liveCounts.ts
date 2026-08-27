@@ -21,6 +21,7 @@ export interface LiveCounts {
   uniqueAccounts: number;
   activeAccounts: number;
   passwordPendingAccounts: number;
+  activeWeeklySubscribersByMonth: Record<number, number>;
   isLive: boolean;
   fetchedAt: string;
   source: 'stripe' | 'assumptions';
@@ -57,6 +58,7 @@ export async function getLiveSubscriberCounts(): Promise<LiveCounts> {
     uniqueAccounts: accountSummary?.uniqueAccounts ?? 0,
     activeAccounts: accountSummary?.activeAccounts ?? 0,
     passwordPendingAccounts: accountSummary?.passwordPendingAccounts ?? 0,
+    activeWeeklySubscribersByMonth: {},
     isLive: false,
     fetchedAt: new Date().toISOString(),
     source: 'assumptions',
@@ -77,6 +79,7 @@ function stripeCountsToLive(
     uniqueAccounts: accountSummary?.uniqueAccounts ?? 0,
     activeAccounts: accountSummary?.activeAccounts ?? 0,
     passwordPendingAccounts: accountSummary?.passwordPendingAccounts ?? 0,
+    activeWeeklySubscribersByMonth: counts.payingCustomersByOperatingMonth,
     isLive: counts.isLive,
     fetchedAt: counts.fetchedAt,
     source: 'stripe',

@@ -1,5 +1,6 @@
 import {
   Assumptions,
+  FOUNDER_COUNT,
   SALARY_TIERS,
   MILESTONES,
   SalaryTier,
@@ -10,7 +11,9 @@ import {
   DashboardSummary,
 } from './types';
 
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_LABELS = ['Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May'];
+const KARAKA_OPERATING_MONTH = 8;
+const GOLD_COAST_OPERATING_MONTH = 8;
 
 // ─── Salary Tier ─────────────────────────────────────────────────────────────
 
@@ -49,6 +52,10 @@ export function calcDayPassRevenue(dayPassSales: number, dayPassPrice: number): 
   return Math.round(dayPassSales * dayPassPrice);
 }
 
+export function calcUnitRevenue(units: number, price: number): number {
+  return Math.round(units * price);
+}
+
 export function calcMonthlyRevenue(
   subscribers: number,
   assumptions: Assumptions,
@@ -56,6 +63,7 @@ export function calcMonthlyRevenue(
   return (
     calcWeeklySubRevenue(subscribers, assumptions.weeklyPassPriceNZD) +
     calcDayPassRevenue(assumptions.dayPassSalesPerMonth, assumptions.dayPassPriceNZD) +
+    calcUnitRevenue(assumptions.terminalSalesPerMonth, assumptions.terminalUnitPriceNZD) +
     assumptions.radioAdRevenue +
     assumptions.sponsorshipRevenue
   );
@@ -65,8 +73,8 @@ export function calcMonthlyRevenue(
 
 export function calcFounderSalariesTotal(subscribers: number): number {
   const tier = getSalaryTier(subscribers);
-  if (tier.monthlyPerFounder < 0) return 3 * 8000; // board review – use 8k as placeholder
-  return 3 * tier.monthlyPerFounder;
+  if (tier.monthlyPerFounder < 0) return FOUNDER_COUNT * 8000; // board review – use 8k as placeholder
+  return FOUNDER_COUNT * tier.monthlyPerFounder;
 }
 
 export function calcTotalExpenses(subscribers: number, assumptions: Assumptions): number {
@@ -156,7 +164,21 @@ export function buildMonthlyForecast(
     const dayPassRevenue = calcDayPassRevenue(dayPassSales, assumptions.dayPassPriceNZD);
     const radioAdRevenue = assumptions.radioAdRevenue;
     const sponsorshipRevenue = assumptions.sponsorshipRevenue;
-    const totalRevenue = weeklySubRevenue + dayPassRevenue + radioAdRevenue + sponsorshipRevenue;
+    const stridesKarakaRevenue = m === KARAKA_OPERATING_MONTH
+      ? calcUnitRevenue(assumptions.stridesKarakaSales, assumptions.stridesReportPriceNZD)
+      : 0;
+    const stridesGoldCoastRevenue = m === GOLD_COAST_OPERATING_MONTH
+      ? calcUnitRevenue(assumptions.stridesGoldCoastSales, assumptions.stridesReportPriceNZD)
+      : 0;
+    const betmanTerminalsRevenue = calcUnitRevenue(assumptions.terminalSalesPerMonth, assumptions.terminalUnitPriceNZD);
+    const totalRevenue =
+      weeklySubRevenue +
+      dayPassRevenue +
+      radioAdRevenue +
+      sponsorshipRevenue +
+      stridesKarakaRevenue +
+      stridesGoldCoastRevenue +
+      betmanTerminalsRevenue;
 
     const hostingAiElevenLabsExpense = assumptions.baseHostingAiElevenLabsNZD;
     const contentCommunityExpense = assumptions.contentCommunityNZD;
@@ -198,6 +220,9 @@ export function buildMonthlyForecast(
       dayPassRevenue,
       radioAdRevenue,
       sponsorshipRevenue,
+      stridesKarakaRevenue,
+      stridesGoldCoastRevenue,
+      betmanTerminalsRevenue,
       totalRevenue,
       hostingAiElevenLabsExpense,
       contentCommunityExpense,

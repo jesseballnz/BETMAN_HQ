@@ -11,6 +11,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 // Stripe is initialised lazily; if the key is missing, fetchStripeSubscriberCounts
 // will return isLive:false rather than crashing at module load time.
 let _stripe: Stripe | null = null;
+const productCache = new Map<string, Stripe.Product>();
 
 function getStripeClient(): Stripe {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -34,6 +35,18 @@ export function getStripe(): Stripe {
 export const stripe = {
   get webhooks() { return getStripeClient().webhooks; },
 };
+
+async function getPriceProduct(client: Stripe, price: Stripe.Price): Promise<Stripe.Product | null> {
+  if (!price.product) return null;
+  if (typeof price.product !== 'string') return price.product as Stripe.Product;
+
+  const cached = productCache.get(price.product);
+  if (cached) return cached;
+
+  const product = await client.products.retrieve(price.product);
+  productCache.set(price.product, product);
+  return product;
+}
 
 // ─── Plan type detection ──────────────────────────────────────────────────────
 // BETMAN uses weekly subscriptions and day passes.
@@ -103,6 +116,48 @@ export interface StripeSubscriberCounts {
   isLive: boolean;
 }
 
+interface CountedSubscription {
+  planType: BetmanPlanType;
+  status: Stripe.Subscription.Status;
+  created: number;
+  canceledAt: number | null;
+  endedAt: number | null;
+  paidLatestInvoice: boolean;
+}
+
+function nzOperatingYearStart(): number {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-NZ', {
+    timeZone: 'Pacific/Auckland',
+    year: 'numeric',
+    month: 'numeric',
+  }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  return month >= 6 ? year : year - 1;
+}
+
+function operatingMonthEndUnix(operatingMonth: number): number {
+  const yearStart = nzOperatingYearStart();
+  const calendarMonthIndex = (5 + operatingMonth) % 12;
+  const calendarYear = yearStart + (operatingMonth >= 8 ? 1 : 0);
+  return Date.UTC(calendarYear, calendarMonthIndex, 1) / 1000;
+}
+
+function subscriptionActiveAt(subscription: CountedSubscription, unixSeconds: number): boolean {
+  return (
+    subscription.created < unixSeconds &&
+    (!subscription.canceledAt || subscription.canceledAt >= unixSeconds) &&
+    (!subscription.endedAt || subscription.endedAt >= unixSeconds)
+  );
+}
+
+function latestInvoicePaid(subscription: Stripe.Subscription): boolean {
+  const invoice = subscription.latest_invoice;
+  if (!invoice || typeof invoice === 'string') return false;
+  return invoice.status === 'paid' && Number(invoice.amount_paid || 0) > 0;
+}
+
 /**
  * Fetches all active Stripe subscriptions and returns subscriber counts
  * broken down by BETMAN plan type (weekly vs day pass).
@@ -130,15 +185,14 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
     };
   }
 
-  let weeklyCount = 0;
-  let dayPassCount = 0;
-  let otherCount = 0;
+  const subscriptions: CountedSubscription[] = [];
 
-  // Fetch all active subscriptions with their price and product data expanded
+  // Fetch active subscriptions with price data expanded. Stripe rejects
+  // data.items.data.price.product because it is beyond the expansion depth limit.
   const client = getStripeClient();
   for await (const subscription of client.subscriptions.list({
-    status: 'active',
-    expand: ['data.items.data.price.product'],
+    status: 'all',
+    expand: ['data.items.data.price', 'data.latest_invoice'],
     limit: 100,
   })) {
     // A subscription can have multiple items (plan bundles), but in practice
@@ -147,28 +201,49 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
     if (!item) continue;
 
     const price = item.price as Stripe.Price;
-    const product =
-      typeof price.product === 'string' ? null : (price.product as Stripe.Product);
+    const product = await getPriceProduct(client, price);
 
-    const planType = classifyPrice(price, product);
-
-    if (planType === 'weekly') weeklyCount++;
-    else if (planType === 'day_pass') dayPassCount++;
-    else otherCount++;
+    subscriptions.push({
+      planType: classifyPrice(price, product),
+      status: subscription.status,
+      created: subscription.created,
+      canceledAt: subscription.canceled_at,
+      endedAt: subscription.ended_at,
+      paidLatestInvoice: latestInvoicePaid(subscription),
+    });
   }
 
+  const activeSubscriptions = subscriptions.filter((subscription) => subscription.status === 'active');
+  const paidWeeklySubscriptions = activeSubscriptions.filter((subscription) => (
+    subscription.planType === 'weekly' && subscription.paidLatestInvoice
+  ));
+  const activeDayPassSubscriptions = activeSubscriptions.filter((subscription) => subscription.planType === 'day_pass');
+  const activeOtherSubscriptions = activeSubscriptions.filter((subscription) => subscription.planType === 'other');
+  const payingCustomersByOperatingMonth = Object.fromEntries(
+    Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1;
+      const monthEnd = operatingMonthEndUnix(month);
+      const count = subscriptions.filter((subscription) => (
+        subscription.planType === 'weekly' &&
+        subscription.paidLatestInvoice &&
+        subscriptionActiveAt(subscription, monthEnd)
+      )).length;
+      return [month, count];
+    }),
+  );
+
   return {
-    activeWeeklySubscribers: weeklyCount,
-    activeDayPassSubscribers: dayPassCount,
-    activeOtherSubscribers: otherCount,
-    totalPayingCustomers: weeklyCount,
-    payingCustomersByOperatingMonth: {},
+    activeWeeklySubscribers: paidWeeklySubscriptions.length,
+    activeDayPassSubscribers: activeDayPassSubscriptions.length,
+    activeOtherSubscribers: activeOtherSubscriptions.length,
+    totalPayingCustomers: paidWeeklySubscriptions.length,
+    payingCustomersByOperatingMonth,
     recentWeeklyCheckoutSessions: 0,
     recentDayPassCheckoutSessions: 0,
     recentOtherCheckoutSessions: 0,
-    totalActiveSubscriptions: weeklyCount + dayPassCount + otherCount,
+    totalActiveSubscriptions: activeSubscriptions.length,
     totalRecentCheckoutSessions: 0,
-    totalProvisionings: weeklyCount + dayPassCount + otherCount,
+    totalProvisionings: activeSubscriptions.length,
     fetchedAt,
     isLive: true,
   };

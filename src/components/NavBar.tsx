@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: '/cashflow', label: 'Cash Flow' },
   { href: '/salary', label: 'Salary' },
   { href: '/tent', label: 'TENT' },
+  { href: '/conversion', label: 'Conversion' },
   { href: '/assumptions', label: 'Assumptions' },
   { href: '/kpi', label: 'KPIs' },
 ];

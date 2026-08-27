@@ -4,8 +4,12 @@ import { useEffect, useState } from 'react';
 import { Assumptions } from '@/lib/types';
 import { PageTitle } from '@/components/MetricCard';
 
+type NumericAssumptionKey = {
+  [K in keyof Assumptions]: Assumptions[K] extends number ? K : never
+}[keyof Assumptions] & string;
+
 type FieldConfig = {
-  key: keyof Assumptions;
+  key: NumericAssumptionKey;
   label: string;
   description: string;
   prefix?: string;
@@ -199,7 +203,7 @@ export default function AssumptionsPage() {
       .then(setAssumptions);
   }, []);
 
-  const handleChange = (key: keyof Assumptions, value: string) => {
+  const handleChange = (key: NumericAssumptionKey, value: string) => {
     if (!assumptions) return;
     setAssumptions({ ...assumptions, [key]: parseFloat(value) || 0 });
     setSaved(false);

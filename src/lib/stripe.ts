@@ -89,7 +89,14 @@ export interface StripeSubscriberCounts {
   activeWeeklySubscribers: number;
   activeDayPassSubscribers: number;
   activeOtherSubscribers: number;
+  totalPayingCustomers: number;
+  payingCustomersByOperatingMonth: Record<number, number>;
+  recentWeeklyCheckoutSessions: number;
+  recentDayPassCheckoutSessions: number;
+  recentOtherCheckoutSessions: number;
   totalActiveSubscriptions: number;
+  totalRecentCheckoutSessions: number;
+  totalProvisionings: number;
   /** ISO timestamp of when this data was fetched */
   fetchedAt: string;
   /** true when STRIPE_SECRET_KEY is configured, false when using seed data */
@@ -110,7 +117,14 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
       activeWeeklySubscribers: 0,
       activeDayPassSubscribers: 0,
       activeOtherSubscribers: 0,
+      totalPayingCustomers: 0,
+      payingCustomersByOperatingMonth: {},
+      recentWeeklyCheckoutSessions: 0,
+      recentDayPassCheckoutSessions: 0,
+      recentOtherCheckoutSessions: 0,
       totalActiveSubscriptions: 0,
+      totalRecentCheckoutSessions: 0,
+      totalProvisionings: 0,
       fetchedAt,
       isLive: false,
     };
@@ -147,7 +161,14 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
     activeWeeklySubscribers: weeklyCount,
     activeDayPassSubscribers: dayPassCount,
     activeOtherSubscribers: otherCount,
+    totalPayingCustomers: weeklyCount,
+    payingCustomersByOperatingMonth: {},
+    recentWeeklyCheckoutSessions: 0,
+    recentDayPassCheckoutSessions: 0,
+    recentOtherCheckoutSessions: 0,
     totalActiveSubscriptions: weeklyCount + dayPassCount + otherCount,
+    totalRecentCheckoutSessions: 0,
+    totalProvisionings: weeklyCount + dayPassCount + otherCount,
     fetchedAt,
     isLive: true,
   };

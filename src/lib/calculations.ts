@@ -102,13 +102,47 @@ function interpolateSubscribers(month: number, assumptions: Assumptions): number
 
 // ─── Monthly Forecast ─────────────────────────────────────────────────────────
 
-export function buildMonthlyForecast(assumptions: Assumptions): MonthlyForecast[] {
+interface LiveForecastOverlay {
+  activeWeeklySubscribers?: number;
+  dayPassSalesPerMonth?: number;
+  activeWeeklySubscribersByMonth?: Record<number, number>;
+}
+
+function getCurrentOperatingMonth(): number {
+  const month = Number(new Intl.DateTimeFormat('en-NZ', {
+    month: 'numeric',
+    timeZone: 'Pacific/Auckland',
+  }).format(new Date()));
+  return ((month - 6 + 12) % 12) + 1;
+}
+
+function targetSubscribersForMonth(month: number, assumptions: Assumptions): number {
+  const override = assumptions.forecastSubscriberTargets?.[month - 1];
+  if (typeof override === 'number' && Number.isFinite(override) && override >= 0) {
+    return Math.round(override);
+  }
+  return interpolateSubscribers(month, assumptions);
+}
+
+export function buildMonthlyForecast(
+  assumptions: Assumptions,
+  live?: LiveForecastOverlay,
+): MonthlyForecast[] {
   const months: MonthlyForecast[] = [];
   let openingCash = assumptions.openingCashNZD;
+  const currentOperatingMonth = live ? getCurrentOperatingMonth() : 1;
 
   for (let m = 1; m <= 12; m++) {
-    const activeWeekly = interpolateSubscribers(m, assumptions);
-    const prevSubs = m === 1 ? 0 : interpolateSubscribers(m - 1, assumptions);
+    const liveMonthValue = live?.activeWeeklySubscribersByMonth?.[m];
+    const activeWeekly = typeof liveMonthValue === 'number'
+      ? liveMonthValue
+      : (live?.activeWeeklySubscribers !== undefined && m === currentOperatingMonth
+          ? live.activeWeeklySubscribers
+          : targetSubscribersForMonth(m, assumptions));
+    const prevLiveMonthValue = live?.activeWeeklySubscribersByMonth?.[m - 1];
+    const prevSubs = m === 1
+      ? 0
+      : (typeof prevLiveMonthValue === 'number' ? prevLiveMonthValue : targetSubscribersForMonth(m - 1, assumptions));
 
     const newSubs = Math.max(0, activeWeekly - prevSubs);
     const lostSubs = m === 1 ? 0 : Math.round(prevSubs * 0.05); // 5% churn
@@ -116,7 +150,10 @@ export function buildMonthlyForecast(assumptions: Assumptions): MonthlyForecast[
     const growthPct = prevSubs > 0 ? ((activeWeekly - prevSubs) / prevSubs) * 100 : 0;
 
     const weeklySubRevenue = calcWeeklySubRevenue(activeWeekly, assumptions.weeklyPassPriceNZD);
-    const dayPassRevenue = calcDayPassRevenue(assumptions.dayPassSalesPerMonth, assumptions.dayPassPriceNZD);
+    const dayPassSales = live?.dayPassSalesPerMonth !== undefined && m === currentOperatingMonth
+      ? live.dayPassSalesPerMonth
+      : assumptions.dayPassSalesPerMonth;
+    const dayPassRevenue = calcDayPassRevenue(dayPassSales, assumptions.dayPassPriceNZD);
     const radioAdRevenue = assumptions.radioAdRevenue;
     const sponsorshipRevenue = assumptions.sponsorshipRevenue;
     const totalRevenue = weeklySubRevenue + dayPassRevenue + radioAdRevenue + sponsorshipRevenue;
@@ -179,6 +216,8 @@ export function buildMonthlyForecast(assumptions: Assumptions): MonthlyForecast[
       runway,
       currentSalaryPerFounder: tier.monthlyPerFounder < 0 ? 8000 : tier.monthlyPerFounder,
       salaryTierLabel: tier.label,
+      isCurrent: m === currentOperatingMonth,
+      isClosed: live ? m < currentOperatingMonth : false,
     });
 
     openingCash = closingCash;

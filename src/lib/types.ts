@@ -18,6 +18,7 @@ export interface Assumptions {
   professionalFeesNZD: number;      // Professional fees monthly
   openingCashNZD: number;           // Opening cash balance
   tentOpeningBalanceNZD: number;    // TENT opening balance
+  forecastSubscriberTargets?: Array<number | null>; // Optional monthly subscriber overrides
 }
 
 export const DEFAULT_ASSUMPTIONS: Assumptions = {
@@ -102,6 +103,8 @@ export interface MonthlyForecast {
   // Salary
   currentSalaryPerFounder: number;
   salaryTierLabel: string;
+  isCurrent?: boolean;
+  isClosed?: boolean;
 }
 
 // ─── PnL ──────────────────────────────────────────────────────────────────────

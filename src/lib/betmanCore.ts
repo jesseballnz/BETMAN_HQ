@@ -22,6 +22,9 @@ export interface CoreAuthSummary {
   apiKeysActive: number;
   planCounts: Record<string, number>;
   statusCounts: Record<string, number>;
+  provisionedUsers?: unknown[];
+  trialFunnel?: Record<string, unknown>;
+  conversionTraffic?: Record<string, unknown>;
 }
 
 export async function fetchCoreAuthSummary(): Promise<CoreAuthSummary | null> {

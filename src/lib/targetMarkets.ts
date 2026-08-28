@@ -3,6 +3,14 @@ import type { ProvisionedUser } from '@/lib/betmanCore';
 import type { ConversionTrafficCity, ConversionTrafficGeography } from '@/lib/hqConversion';
 import type { MetaMarketMetric } from '@/lib/metaAds';
 
+const UNKNOWN_COUNTRY = 'UNATTRIBUTED';
+const UNKNOWN_TARGET_MARKET = {
+  code: UNKNOWN_COUNTRY,
+  name: 'Unattributed',
+  short: 'UNK',
+  colour: '#94a3b8',
+} as const;
+
 export interface TargetMarketRow {
   code: string;
   name: string;
@@ -72,8 +80,7 @@ export function buildTargetMarketRows(
   }
 
   for (const user of provisionedUsers) {
-    const code = countryCode(user.country || '');
-    if (!code) continue;
+    const code = countryCode(user.country || '') || UNKNOWN_COUNTRY;
     if (user.trialStartedAt) {
       trialCounts.set(code, (trialCounts.get(code) ?? 0) + 1);
     }
@@ -87,7 +94,7 @@ export function buildTargetMarketRows(
     0,
   );
 
-  return APAC_MARKET_CENTRES.map((market) => {
+  const rows: TargetMarketRow[] = APAC_MARKET_CENTRES.map((market) => {
     const meta = metaByCountry.get(market.code);
     const metaLandingPageViews = meta?.landingPageViews ?? 0;
 
@@ -109,4 +116,29 @@ export function buildTargetMarketRows(
       sharePct: totalMetaLandingPageViews > 0 ? (metaLandingPageViews / totalMetaLandingPageViews) * 100 : 0,
     };
   });
+
+  const unattributedTrialCount = trialCounts.get(UNKNOWN_COUNTRY) ?? 0;
+  const unattributedCustomerCount = customerCounts.get(UNKNOWN_COUNTRY) ?? 0;
+
+  if (unattributedTrialCount > 0 || unattributedCustomerCount > 0) {
+    rows.push({
+      code: UNKNOWN_TARGET_MARKET.code,
+      name: UNKNOWN_TARGET_MARKET.name,
+      short: UNKNOWN_TARGET_MARKET.short,
+      colour: UNKNOWN_TARGET_MARKET.colour,
+      currency: 'NZD',
+      metaLandingPageViews: 0,
+      spend: 0,
+      impressions: 0,
+      reach: 0,
+      clicks: 0,
+      ownedSessions: 0,
+      trialCount: unattributedTrialCount,
+      customerCount: unattributedCustomerCount,
+      areas: 0,
+      sharePct: 0,
+    });
+  }
+
+  return rows;
 }

@@ -259,14 +259,14 @@ export default async function ConversionPage() {
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-slate-100">Target Market Success</h2>
-            <p className="mt-1 text-xs text-slate-500">NZ, Australia and Hong Kong delivery joined to owned trial and customer accounts.</p>
+            <p className="mt-1 text-xs text-slate-500">NZ, Australia and Hong Kong delivery joined to owned accounts, with unattributed accounts called out separately.</p>
           </div>
           <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-300">
-            HK target visible
+            Unattributed visible
           </span>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {targetMarketRows.map((row) => (
             <div key={row.code} className="rounded-lg border border-slate-800 bg-slate-950/55 p-4">
               <div className="flex items-center justify-between gap-3">

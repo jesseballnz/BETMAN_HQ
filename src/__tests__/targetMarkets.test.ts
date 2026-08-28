@@ -34,4 +34,21 @@ describe('buildTargetMarketRows', () => {
       customerCount: 1,
     });
   });
+
+  test('shows unattributed accounts when Core users have no country', () => {
+    const rows = buildTargetMarketRows([], [], [], [
+      { email: 'trial@example.com', country: '', planType: 'tester', trialStartedAt: '2026-08-27T20:26:15.842Z', subscriptionActive: true },
+      { email: 'customer@example.com', planType: 'weekly', subscriptionActive: true },
+    ]);
+
+    expect(rows.map((row) => row.code)).toEqual(['NZ', 'AU', 'HK', 'UNATTRIBUTED']);
+    expect(rows.find((row) => row.code === 'UNATTRIBUTED')).toMatchObject({
+      name: 'Unattributed',
+      metaLandingPageViews: 0,
+      ownedSessions: 0,
+      trialCount: 1,
+      customerCount: 1,
+      spend: 0,
+    });
+  });
 });

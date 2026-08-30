@@ -93,7 +93,9 @@ async function discoverAdAccountIds(token: string): Promise<string[]> {
 
     const body = (await res.json()) as MetaAdAccountsResponse;
     for (const account of body.data ?? []) {
-      if (account.id && (account.account_status === undefined || account.account_status === 1)) {
+      // Meta still returns usable accounts with statuses like 3 and 9 for reporting.
+      // Keep any discovered account unless Meta explicitly omits the id.
+      if (account.id && account.account_status !== 2) {
         accountIds.push(account.id.replace(/^act_/, ''));
       }
     }

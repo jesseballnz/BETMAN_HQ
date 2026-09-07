@@ -37,10 +37,8 @@ function countryCode(value: string): string {
   return normalized;
 }
 
-function isCustomer(user: ProvisionedUser): boolean {
-  if (!user.subscriptionActive) return false;
-  const plan = String(user.planType || '').trim().toLowerCase();
-  return !['tester', 'trial', 'free'].includes(plan);
+function isCustomer(user: ProvisionedUser, paidEmails: Set<string>): boolean {
+  return paidEmails.has(user.email.trim().toLowerCase());
 }
 
 export function buildTargetMarketRows(
@@ -48,6 +46,7 @@ export function buildTargetMarketRows(
   cities: ConversionTrafficCity[],
   marketMetrics: MetaMarketMetric[],
   provisionedUsers: ProvisionedUser[] = [],
+  paidEmails: Set<string> = new Set(),
 ): TargetMarketRow[] {
   const geographyByCountry = new Map(geographies.map((row) => [countryCode(row.countryCode), row]));
   const areaCounts = new Map<string, number>();
@@ -84,7 +83,7 @@ export function buildTargetMarketRows(
     if (user.trialStartedAt) {
       trialCounts.set(code, (trialCounts.get(code) ?? 0) + 1);
     }
-    if (isCustomer(user)) {
+    if (isCustomer(user, paidEmails)) {
       customerCounts.set(code, (customerCounts.get(code) ?? 0) + 1);
     }
   }

@@ -9,14 +9,18 @@ export async function GET() {
     // Serve from cache if still fresh
     const cached = getStripeCache();
     if (cached) {
-      return NextResponse.json({ ...cached, fromCache: true });
+      const publicCounts: Partial<typeof cached> = { ...cached };
+      delete publicCounts.payingCustomerEmails;
+      return NextResponse.json({ ...publicCounts, fromCache: true });
     }
 
     const counts = await fetchStripeSubscriberCounts();
     if (counts.isLive) {
       setStripeCache(counts);
     }
-    return NextResponse.json({ ...counts, fromCache: false });
+    const publicCounts: Partial<typeof counts> = { ...counts };
+    delete publicCounts.payingCustomerEmails;
+    return NextResponse.json({ ...publicCounts, fromCache: false });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(

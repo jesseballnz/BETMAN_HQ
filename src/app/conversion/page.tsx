@@ -7,6 +7,8 @@ import { fetchMetaCampaignMetrics, fetchMetaMarketMetrics, type MetaCampaignMetr
 import { buildSourceSuccessSummary } from '@/lib/sourceSuccess';
 import { buildTargetMarketRows } from '@/lib/targetMarkets';
 import LandingMap from './LandingMap';
+import { fetchStripeSubscriberCounts } from '@/lib/stripe';
+import { buildPaidAccountSet, paidAccountCount } from '@/lib/paidAccounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,12 +22,6 @@ function fmtCurrency(value: number, currency: string): string {
     currency,
     maximumFractionDigits: 2,
   }).format(value);
-}
-
-function isPaidUser(user: { planType?: string; subscriptionActive?: boolean }): boolean {
-  if (!user.subscriptionActive) return false;
-  const plan = String(user.planType || '').trim().toLowerCase();
-  return !['tester', 'trial', 'free'].includes(plan);
 }
 
 function campaignKey(value: string): string {
@@ -112,20 +108,23 @@ function buildTopCampaignRows(ownedCampaigns: ConversionTrafficCampaign[], metaC
       trialRatePct: row.signups > 0 ? (row.trials / row.signups) * 100 : 0,
     }))
     .sort((a, b) => {
+      const dataIssueDiff = Number(b.landingSessions === 0 && (b.signups > 0 || b.trials > 0 || b.verifiedTrials > 0 || b.conversions > 0))
+        - Number(a.landingSessions === 0 && (a.signups > 0 || a.trials > 0 || a.verifiedTrials > 0 || a.conversions > 0));
+      if (dataIssueDiff !== 0) return dataIssueDiff;
       const outcomeDiff = b.trials - a.trials || b.signups - a.signups || b.conversions - a.conversions;
       if (outcomeDiff !== 0) return outcomeDiff;
       const ctrDiff = b.ctrPct - a.ctrPct;
       if (Math.abs(ctrDiff) > 0.001) return ctrDiff;
       return b.clicks - a.clicks;
-    })
-    .slice(0, 8);
+    });
 }
 
 export default async function ConversionPage() {
-  const [summary, marketMetrics, campaignMetrics] = await Promise.all([
+  const [summary, marketMetrics, campaignMetrics, stripeCounts] = await Promise.all([
     fetchCoreAuthSummary().catch(() => null),
     fetchMetaMarketMetrics().catch(() => []),
     fetchMetaCampaignMetrics().catch(() => []),
+    fetchStripeSubscriberCounts().catch(() => null),
   ]);
   const traffic = normalizeConversionTraffic(summary);
   const totals = traffic.campaigns.reduce((sum, row) => ({
@@ -149,9 +148,16 @@ export default async function ConversionPage() {
   const provisionedUsers = summary?.provisionedUsers || [];
   const signupAccountCount = provisionedUsers.length || totals.signups;
   const trialAccountCount = provisionedUsers.filter((user) => user.trialStartedAt).length || totals.trials;
-  const paidAccountCount = provisionedUsers.filter(isPaidUser).length || totals.conversions;
-  const targetMarketRows = buildTargetMarketRows(traffic.geographies, traffic.cities, marketMetrics, provisionedUsers);
+  const paidEmails = buildPaidAccountSet(provisionedUsers, stripeCounts);
+  const paidAccounts = paidAccountCount(provisionedUsers, stripeCounts);
+  const targetMarketRows = buildTargetMarketRows(traffic.geographies, traffic.cities, marketMetrics, provisionedUsers, paidEmails);
   const topCampaignRows = buildTopCampaignRows(traffic.campaigns, campaignMetrics);
+  const campaignRowsWithOutcomesNoLandings = traffic.campaigns.filter((row) => (
+    row.landingSessions === 0 && (row.signups > 0 || row.trials > 0 || row.verifiedTrials > 0 || row.conversions > 0)
+  ));
+  const unassignedFacebookRows = traffic.campaigns.filter((row) => (
+    row.platform.toLowerCase() === 'facebook' && row.campaign.trim().toLowerCase() === 'unassigned'
+  ));
 
   return (
     <div>
@@ -193,15 +199,44 @@ export default async function ConversionPage() {
           <MetricCard title="Trials" value={fmtNumber(trialAccountCount)} subtitle={`${fmtNumber(totals.verifiedTrials)} verified in 30-day funnel`} accent="green" />
         </a>
         <a href="/users?filter=paid" className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400" aria-label="View paid customers">
-          <MetricCard title="Paid" value={fmtNumber(paidAccountCount)} subtitle={`${fmtPct(totals.conversions, totals.trials)} 30-day trial conversion`} accent="gold" />
+          <MetricCard title="Paid" value={fmtNumber(paidAccounts)} subtitle="Stripe plus Core paid signal" accent="gold" />
         </a>
       </div>
+
+      {(campaignRowsWithOutcomesNoLandings.length > 0 || unassignedFacebookRows.length > 0 || (stripeCounts?.totalPayingCustomers ?? 0) < paidEmails.size) && (
+        <section className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-amber-200">Data Quality Watch</h2>
+              <p className="mt-1 text-xs text-amber-100/70">Rows here need attribution or source repair before the funnel can be trusted.</p>
+            </div>
+            <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200">
+              Action required
+            </span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-lg border border-amber-400/20 bg-slate-950/45 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-100/60">Outcomes without landings</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-white">{fmtNumber(campaignRowsWithOutcomesNoLandings.length)}</p>
+            </div>
+            <div className="rounded-lg border border-amber-400/20 bg-slate-950/45 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-100/60">Facebook unassigned rows</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-white">{fmtNumber(unassignedFacebookRows.length)}</p>
+            </div>
+            <div className="rounded-lg border border-amber-400/20 bg-slate-950/45 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-100/60">Core paid fallback</p>
+              <p className="mt-1 text-2xl font-black tabular-nums text-white">{fmtNumber(Math.max(0, paidEmails.size - (stripeCounts?.totalPayingCustomers ?? 0)))}</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       <LandingMap
         rows={traffic.geographies}
         cities={traffic.cities}
         resolution={traffic.geographyResolution}
         marketMetrics={marketMetrics}
+        campaigns={traffic.campaigns}
       />
 
       <section className="mb-8 rounded-xl border border-slate-800 bg-gray-900 p-5">
@@ -435,7 +470,7 @@ export default async function ConversionPage() {
       </div>
 
       <p className="text-slate-600 text-xs">
-        Landing sessions come from deduplicated BETMAN access logs. Trial and paid outcomes come from Core account state.
+        Landing sessions and trial outcomes come from Core. Current paid customers come from Stripe.
       </p>
     </div>
   );

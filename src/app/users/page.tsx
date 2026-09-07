@@ -2,6 +2,8 @@ import Link from 'next/link';
 import MetricCard, { PageTitle } from '@/components/MetricCard';
 import { fetchCoreAuthSummary, type ProvisionedUser } from '@/lib/betmanCore';
 import UserActions from './UserActions';
+import { fetchStripeSubscriberCounts } from '@/lib/stripe';
+import { buildPaidAccountSet, paidAccountCount } from '@/lib/paidAccounts';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,20 +72,14 @@ function isTrialUser(user: ProvisionedUser): boolean {
   return Boolean(user.trialStartedAt);
 }
 
-function isPaidUser(user: ProvisionedUser): boolean {
-  if (!user.subscriptionActive) return false;
-  const plan = String(user.planType || '').trim().toLowerCase();
-  return !['tester', 'trial', 'free'].includes(plan);
-}
-
 function isActiveUser(user: ProvisionedUser): boolean {
   return user.accountStatus === 'active' || Boolean(user.subscriptionActive);
 }
 
-function matchesFilter(user: ProvisionedUser, filter: UserFilter | null): boolean {
+function matchesFilter(user: ProvisionedUser, filter: UserFilter | null, paidEmails: Set<string>): boolean {
   if (filter === 'active') return isActiveUser(user);
   if (filter === 'trials') return isTrialUser(user);
-  if (filter === 'paid') return isPaidUser(user);
+  if (filter === 'paid') return paidEmails.has(user.email.trim().toLowerCase());
   return true;
 }
 
@@ -161,14 +157,18 @@ function UserDetail({ user }: { user: ProvisionedUser }) {
 }
 
 export default async function UsersPage({ searchParams }: UsersPageProps) {
-  const summary = await fetchCoreAuthSummary().catch(() => null);
+  const [summary, stripeCounts] = await Promise.all([
+    fetchCoreAuthSummary().catch(() => null),
+    fetchStripeSubscriberCounts().catch(() => null),
+  ]);
   const users = (summary?.provisionedUsers || [])
     .map(normalizeUser)
     .filter((user): user is ProvisionedUser => user !== null);
+  const paidEmails = buildPaidAccountSet(users, stripeCounts);
 
   const query = String(searchParams?.q || '').trim().toLowerCase();
   const filter = normalizeFilter(searchParams?.filter);
-  const filteredByType = users.filter((user) => matchesFilter(user, filter));
+  const filteredByType = users.filter((user) => matchesFilter(user, filter, paidEmails));
   const filteredUsers = query ? filteredByType.filter((user) => includesQuery(user, query)) : filteredByType;
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
   const requestedPage = Number.parseInt(String(searchParams?.page || '1'), 10);
@@ -178,7 +178,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
   const selectedUser = users.find((user) => user.email.toLowerCase() === selectedEmail) || null;
   const activeUsers = users.filter(isActiveUser).length;
   const trialUsers = users.filter(isTrialUser).length;
-  const paidUsers = users.filter(isPaidUser).length;
+  const paidUsers = paidAccountCount(users, stripeCounts);
 
   return (
     <div>
@@ -195,7 +195,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
           <MetricCard title="Trials" value={trialUsers.toString()} subtitle="Trial account rows" accent="green" />
         </Link>
         <Link href="/users?filter=paid" className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400">
-          <MetricCard title="Paid" value={paidUsers.toString()} subtitle="Paying customer rows" accent="gold" />
+          <MetricCard title="Paid" value={paidUsers.toString()} subtitle="Stripe plus Core paid signal" accent="gold" />
         </Link>
       </div>
 

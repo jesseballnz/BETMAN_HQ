@@ -1,4 +1,4 @@
-import { classifyPrice } from '@/lib/stripe';
+import { classifyPrice, isExcludedPaidPlan } from '@/lib/stripe';
 import type Stripe from 'stripe';
 
 // Helper to build minimal Stripe Price objects for testing
@@ -160,5 +160,15 @@ describe('classifyPrice — env var priority', () => {
       recurring: { interval: 'week', interval_count: 1 } as Stripe.Price.Recurring,
     });
     expect(classifyPrice(price, null)).toBe('weekly');
+  });
+});
+
+describe('paid plan exclusions', () => {
+  test.each(['Tester', 'Free Plan', 'Complimentary-access', 'trial_week'])('%s is excluded', (name) => {
+    expect(isExcludedPaidPlan(makePrice(), makeProduct({ name }))).toBe(true);
+  });
+
+  test('normal paid product is not excluded', () => {
+    expect(isExcludedPaidPlan(makePrice(), makeProduct({ name: 'BETMAN Weekly Access' }))).toBe(false);
   });
 });

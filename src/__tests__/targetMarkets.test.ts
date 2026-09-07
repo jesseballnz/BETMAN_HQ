@@ -20,6 +20,7 @@ describe('buildTargetMarketRows', () => {
         { email: 'trial@example.com', country: 'Hong Kong', planType: 'tester', trialStartedAt: '2026-08-27T20:26:15.842Z', subscriptionActive: true },
         { email: 'customer@example.com', country: 'HK', planType: 'weekly', trialStartedAt: '2026-08-20T20:26:15.842Z', subscriptionActive: true },
       ],
+      new Set(['customer@example.com']),
     );
 
     expect(rows.map((row) => row.code)).toEqual(['NZ', 'AU', 'HK']);
@@ -36,10 +37,16 @@ describe('buildTargetMarketRows', () => {
   });
 
   test('shows unattributed accounts when Core users have no country', () => {
-    const rows = buildTargetMarketRows([], [], [], [
-      { email: 'trial@example.com', country: '', planType: 'tester', trialStartedAt: '2026-08-27T20:26:15.842Z', subscriptionActive: true },
-      { email: 'customer@example.com', planType: 'weekly', subscriptionActive: true },
-    ]);
+    const rows = buildTargetMarketRows(
+      [],
+      [],
+      [],
+      [
+        { email: 'trial@example.com', country: '', planType: 'tester', trialStartedAt: '2026-08-27T20:26:15.842Z', subscriptionActive: true },
+        { email: 'customer@example.com', planType: 'weekly', subscriptionActive: true },
+      ],
+      new Set(['customer@example.com']),
+    );
 
     expect(rows.map((row) => row.code)).toEqual(['NZ', 'AU', 'HK', 'UNATTRIBUTED']);
     expect(rows.find((row) => row.code === 'UNATTRIBUTED')).toMatchObject({

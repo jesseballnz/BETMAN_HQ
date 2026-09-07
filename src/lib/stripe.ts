@@ -110,6 +110,8 @@ export interface StripeSubscriberCounts {
   totalActiveSubscriptions: number;
   totalRecentCheckoutSessions: number;
   totalProvisionings: number;
+  /** Normalized emails for matching Stripe-paid customers to Core profiles. Server-side only. */
+  payingCustomerEmails: string[];
   /** ISO timestamp of when this data was fetched */
   fetchedAt: string;
   /** true when STRIPE_SECRET_KEY is configured, false when using seed data */
@@ -117,12 +119,37 @@ export interface StripeSubscriberCounts {
 }
 
 interface CountedSubscription {
+  customerKey: string;
+  customerEmail: string;
   planType: BetmanPlanType;
   status: Stripe.Subscription.Status;
   created: number;
   canceledAt: number | null;
   endedAt: number | null;
   paidLatestInvoice: boolean;
+  excludedFromPaid: boolean;
+}
+
+const NON_PAYING_PLAN_TERMS = ['tester', 'trial', 'free', 'complimentary', 'comp'];
+
+export function isExcludedPaidPlan(price: Stripe.Price, product: Stripe.Product | null): boolean {
+  const values = [
+    price.nickname,
+    price.metadata?.betman_plan,
+    price.metadata?.plan_type,
+    product?.name,
+    product?.metadata?.betman_plan,
+    product?.metadata?.plan_type,
+  ].map((value) => String(value || '').trim().toLowerCase());
+  return values.some((value) => NON_PAYING_PLAN_TERMS.some((term) => (
+    value === term || value.startsWith(`${term} `) || value.startsWith(`${term}-`) || value.startsWith(`${term}_`)
+  )));
+}
+
+function customerIdentity(customer: string | Stripe.Customer | Stripe.DeletedCustomer): { key: string; email: string } {
+  if (typeof customer === 'string') return { key: customer, email: '' };
+  const email = 'email' in customer ? String(customer.email || '').trim().toLowerCase() : '';
+  return { key: customer.id || email, email };
 }
 
 function nzOperatingYearStart(): number {
@@ -180,6 +207,7 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
       totalActiveSubscriptions: 0,
       totalRecentCheckoutSessions: 0,
       totalProvisionings: 0,
+      payingCustomerEmails: [],
       fetchedAt,
       isLive: false,
     };
@@ -192,7 +220,7 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
   const client = getStripeClient();
   for await (const subscription of client.subscriptions.list({
     status: 'all',
-    expand: ['data.items.data.price', 'data.latest_invoice'],
+    expand: ['data.items.data.price', 'data.latest_invoice', 'data.customer'],
     limit: 100,
   })) {
     // A subscription can have multiple items (plan bundles), but in practice
@@ -202,41 +230,50 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
 
     const price = item.price as Stripe.Price;
     const product = await getPriceProduct(client, price);
+    const customer = customerIdentity(subscription.customer);
 
     subscriptions.push({
+      customerKey: customer.key,
+      customerEmail: customer.email,
       planType: classifyPrice(price, product),
       status: subscription.status,
       created: subscription.created,
       canceledAt: subscription.canceled_at,
       endedAt: subscription.ended_at,
       paidLatestInvoice: latestInvoicePaid(subscription),
+      excludedFromPaid: isExcludedPaidPlan(price, product),
     });
   }
 
   const activeSubscriptions = subscriptions.filter((subscription) => subscription.status === 'active');
-  const paidWeeklySubscriptions = activeSubscriptions.filter((subscription) => (
-    subscription.planType === 'weekly' && subscription.paidLatestInvoice
+  const paidSubscriptions = activeSubscriptions.filter((subscription) => (
+    subscription.paidLatestInvoice && !subscription.excludedFromPaid
   ));
+  const paidCustomerKeys = new Set(paidSubscriptions.map((subscription) => subscription.customerKey));
+  const paidWeeklyCustomerKeys = new Set(paidSubscriptions
+    .filter((subscription) => subscription.planType === 'weekly')
+    .map((subscription) => subscription.customerKey));
   const activeDayPassSubscriptions = activeSubscriptions.filter((subscription) => subscription.planType === 'day_pass');
   const activeOtherSubscriptions = activeSubscriptions.filter((subscription) => subscription.planType === 'other');
   const payingCustomersByOperatingMonth = Object.fromEntries(
     Array.from({ length: 12 }, (_, index) => {
       const month = index + 1;
       const monthEnd = operatingMonthEndUnix(month);
-      const count = subscriptions.filter((subscription) => (
+      const count = new Set(subscriptions.filter((subscription) => (
         subscription.planType === 'weekly' &&
         subscription.paidLatestInvoice &&
+        !subscription.excludedFromPaid &&
         subscriptionActiveAt(subscription, monthEnd)
-      )).length;
+      )).map((subscription) => subscription.customerKey)).size;
       return [month, count];
     }),
   );
 
   return {
-    activeWeeklySubscribers: paidWeeklySubscriptions.length,
+    activeWeeklySubscribers: paidWeeklyCustomerKeys.size,
     activeDayPassSubscribers: activeDayPassSubscriptions.length,
     activeOtherSubscribers: activeOtherSubscriptions.length,
-    totalPayingCustomers: paidWeeklySubscriptions.length,
+    totalPayingCustomers: paidCustomerKeys.size,
     payingCustomersByOperatingMonth,
     recentWeeklyCheckoutSessions: 0,
     recentDayPassCheckoutSessions: 0,
@@ -244,6 +281,9 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
     totalActiveSubscriptions: activeSubscriptions.length,
     totalRecentCheckoutSessions: 0,
     totalProvisionings: activeSubscriptions.length,
+    payingCustomerEmails: Array.from(new Set(paidSubscriptions
+      .map((subscription) => subscription.customerEmail)
+      .filter(Boolean))),
     fetchedAt,
     isLive: true,
   };

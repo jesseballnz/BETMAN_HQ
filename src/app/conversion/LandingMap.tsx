@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { APAC_MARKET_CENTRES, projectApacPoint } from '@/lib/geoProjection';
-import type { ConversionTrafficCity, ConversionTrafficGeography } from '@/lib/hqConversion';
+import type { ConversionTrafficCampaign, ConversionTrafficCity, ConversionTrafficGeography } from '@/lib/hqConversion';
 import { fmtNumber } from '@/lib/calculations';
 
 interface MarketMetric {
@@ -23,6 +23,7 @@ interface LandingMapProps {
     totalSessions?: number;
   };
   marketMetrics: MarketMetric[];
+  campaigns?: ConversionTrafficCampaign[];
 }
 
 function fmtCurrency(value: number, currency: string): string {
@@ -37,7 +38,7 @@ function countryCode(value: string): string {
   return value.toUpperCase();
 }
 
-export default function LandingMap({ rows, cities, resolution, marketMetrics }: LandingMapProps) {
+export default function LandingMap({ rows, cities, resolution, marketMetrics, campaigns = [] }: LandingMapProps) {
   const [selectedMarket, setSelectedMarket] = useState<string | null>(null);
   const countryRows = new Map(rows.map((row) => [countryCode(row.countryCode), row]));
   const landingViewsByCountry = new Map<string, { landingPageViews: number }>();
@@ -76,6 +77,12 @@ export default function LandingMap({ rows, cities, resolution, marketMetrics }: 
     .filter((city) => !selected || countryCode(city.countryCode) === selected.code)
     .sort((a, b) => b.landingSessions - a.landingSessions);
   const datasetSessions = datasetCities.reduce((sum, city) => sum + city.landingSessions, 0);
+  const datasetCampaigns = [...campaigns].sort((a, b) => {
+    const issueDiff = Number(b.landingSessions === 0 && (b.signups > 0 || b.trials > 0 || b.verifiedTrials > 0 || b.conversions > 0))
+      - Number(a.landingSessions === 0 && (a.signups > 0 || a.trials > 0 || a.verifiedTrials > 0 || a.conversions > 0));
+    if (issueDiff !== 0) return issueDiff;
+    return b.landingSessions - a.landingSessions || b.signups - a.signups || b.trials - a.trials;
+  });
   const selectedMetrics = marketMetrics.filter((row) => !selected || countryCode(row.countryCode) === selected.code);
   const metricCurrencies = Array.from(new Set(selectedMetrics.filter((row) => row.spend > 0).map((row) => row.currency)));
   const metricCurrency = metricCurrencies[0] || 'NZD';
@@ -335,6 +342,56 @@ export default function LandingMap({ rows, cities, resolution, marketMetrics }: 
                   )}
                 </tbody>
               </table>
+
+              <div className="mt-6 border-t border-slate-800 pt-5">
+                <div className="mb-3 flex items-end justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black text-slate-100">Campaign/session rows</h4>
+                    <p className="mt-1 text-xs text-slate-500">Owned Core attribution rows that feed Landing Sessions, Signups, Trials and Paid.</p>
+                  </div>
+                  <span className="text-xs font-bold tabular-nums text-slate-500">{fmtNumber(datasetCampaigns.length)} rows</span>
+                </div>
+                <table className="w-full min-w-[760px] text-sm">
+                  <thead className="sticky top-0 bg-slate-950 text-[10px] uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Source</th>
+                      <th className="px-3 py-2 text-left">Campaign</th>
+                      <th className="px-3 py-2 text-right">Landings</th>
+                      <th className="px-3 py-2 text-right">Signups</th>
+                      <th className="px-3 py-2 text-right">Trials</th>
+                      <th className="px-3 py-2 text-right">Verified</th>
+                      <th className="px-3 py-2 text-right">Paid</th>
+                      <th className="px-3 py-2 text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {datasetCampaigns.map((campaign) => {
+                      const outcomes = campaign.signups + campaign.trials + campaign.verifiedTrials + campaign.conversions;
+                      const missingLandings = campaign.landingSessions === 0 && outcomes > 0;
+                      const unassigned = campaign.campaign.trim().toLowerCase() === 'unassigned';
+                      return (
+                        <tr key={`${campaign.platform}-${campaign.campaign}`} className="border-t border-slate-800">
+                          <td className="px-3 py-2.5 capitalize text-slate-400">{campaign.platform || 'unattributed'}</td>
+                          <td className="max-w-[260px] truncate px-3 py-2.5 font-semibold text-slate-200" title={campaign.campaign}>{campaign.campaign || 'unassigned'}</td>
+                          <td className="px-3 py-2.5 text-right font-bold tabular-nums text-white">{fmtNumber(campaign.landingSessions)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-emerald-300">{fmtNumber(campaign.signups)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-emerald-300">{fmtNumber(campaign.trials)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-emerald-300">{fmtNumber(campaign.verifiedTrials)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums text-amber-300">{fmtNumber(campaign.conversions)}</td>
+                          <td className={`px-3 py-2.5 text-xs font-bold ${missingLandings ? 'text-amber-300' : unassigned ? 'text-slate-400' : 'text-emerald-300'}`}>
+                            {missingLandings ? 'Missing landing data' : unassigned ? 'Unassigned campaign' : 'Matched'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!datasetCampaigns.length && (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-8 text-center text-slate-500">No campaign/session rows are available from Core.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

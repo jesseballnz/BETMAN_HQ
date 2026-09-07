@@ -259,6 +259,7 @@ describe('buildMonthlyForecast P&L totals', () => {
   });
 
   test('uses supplied live operating-month subscriber actuals before forecast targets', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-15T00:00:00Z'));
     const liveForecast = buildMonthlyForecast(DEFAULT_ASSUMPTIONS, {
       activeWeeklySubscribers: 4,
       activeWeeklySubscribersByMonth: {
@@ -276,6 +277,7 @@ describe('buildMonthlyForecast P&L totals', () => {
     expect(liveForecast[2].activeWeeklySubscribers).toBe(4);
     expect(liveForecast[3].monthLabel).toBe('Sep');
     expect(liveForecast[3].activeWeeklySubscribers).toBe(2000);
+    jest.useRealTimers();
   });
 
   test('adds Strides event revenue and monthly BETMAN Terminal revenue', () => {

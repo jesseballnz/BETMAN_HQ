@@ -18,7 +18,18 @@ OUTPUT = Path(os.environ.get(
     "BETMAN_HQ_CONVERSION_STATUS",
     "/opt/betman/betman_hq/runtime/conversion-status.json",
 ))
+SNAPSHOT = Path(os.environ.get(
+    "BETMAN_HQ_CONVERSION_SNAPSHOT",
+    "/opt/betman/betman_hq/runtime/conversion-cities-snapshot.json",
+))
+HISTORY_DIR = Path(os.environ.get(
+    "BETMAN_HQ_CONVERSION_HISTORY_DIR",
+    "/opt/betman/betman_hq/runtime/conversion-history",
+))
 MIN_LANDING_SESSIONS = int(os.environ.get("BETMAN_HQ_CONVERSION_MIN_LANDINGS", "1"))
+MIN_CITY_FLOOR = int(os.environ.get("BETMAN_HQ_CONVERSION_MIN_CITIES", "50"))
+MAX_CITY_DROP_RATIO = float(os.environ.get("BETMAN_HQ_CONVERSION_MAX_CITY_DROP_RATIO", "0.40"))
+HISTORY_KEEP = int(os.environ.get("BETMAN_HQ_CONVERSION_HISTORY_KEEP", "48"))
 
 
 def fetch_json(url: str, token: str | None = None) -> dict:
@@ -40,18 +51,86 @@ def warm_page() -> int:
         return int(response.status)
 
 
-def write_status(payload: dict) -> None:
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=OUTPUT.name + ".", dir=OUTPUT.parent)
+def write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, sort_keys=True)
             handle.write("\n")
         os.chmod(temporary, 0o640)
-        os.replace(temporary, OUTPUT)
+        os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def write_status(payload: dict) -> None:
+    write_json(OUTPUT, payload)
+
+
+def load_previous_snapshot() -> dict:
+    if not SNAPSHOT.exists():
+        return {}
+    try:
+        payload = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def prune_history(directory: Path, keep: int) -> None:
+    if keep <= 0 or not directory.exists():
+        return
+    files = sorted(
+        (path for path in directory.glob("conversion-cities-*.json") if path.is_file()),
+        key=lambda path: path.name,
+    )
+    for stale in files[0:max(0, len(files) - keep)]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+
+
+def persist_full_city_snapshot(
+    *,
+    checked_at: str,
+    traffic: dict,
+    totals: dict,
+    geographies: list,
+    cities: list,
+    campaigns: list,
+) -> None:
+    """Persist the full city array so recovery never depends on topCities truncation."""
+    payload = {
+        "checkedAt": checked_at,
+        "generatedAt": traffic.get("generatedAt"),
+        "schemaVersion": 1,
+        "source": "core-auth-summary-conversionTraffic",
+        "totals": {
+            "landingSessions": int(totals.get("landingSessions") or 0),
+            "signups": int(totals.get("signups") or 0),
+            "trials": int(totals.get("trials") or 0),
+            "verifiedTrials": int(totals.get("verifiedTrials") or 0),
+            "conversions": int(totals.get("conversions") or 0),
+        },
+        "counts": {
+            "campaigns": len(campaigns),
+            "geographies": len(geographies),
+            "cities": len(cities),
+        },
+        "geographies": geographies,
+        "cities": cities,
+        "campaigns": campaigns,
+    }
+    write_json(SNAPSHOT, payload)
+
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = checked_at.replace(":", "").replace("-", "")
+    history_path = HISTORY_DIR / f"conversion-cities-{stamp}.json"
+    write_json(history_path, payload)
+    prune_history(HISTORY_DIR, HISTORY_KEEP)
 
 
 def main() -> int:
@@ -81,6 +160,21 @@ def main() -> int:
         failures.append("geographies array is empty while landing sessions exist")
     if landing_sessions > 0 and not cities:
         failures.append("cities array is empty while landing sessions exist")
+
+    previous = load_previous_snapshot()
+    previous_cities = previous.get("cities") if isinstance(previous.get("cities"), list) else []
+    previous_count = len(previous_cities)
+    current_count = len(cities)
+    if current_count > 0 and current_count < MIN_CITY_FLOOR:
+        failures.append(f"city count {current_count} is below floor {MIN_CITY_FLOOR}")
+    if previous_count >= MIN_CITY_FLOOR and current_count > 0:
+        drop_ratio = 1.0 - (current_count / previous_count)
+        if drop_ratio >= MAX_CITY_DROP_RATIO:
+            failures.append(
+                "city count dropped too far: "
+                f"{previous_count} -> {current_count} "
+                f"(drop={drop_ratio:.0%}, max={MAX_CITY_DROP_RATIO:.0%})"
+            )
 
     page_status = None
     if not failures:
@@ -112,8 +206,27 @@ def main() -> int:
         },
         "topGeographies": geographies[:10],
         "topCities": cities[:20],
+        "snapshot": {
+            "path": str(SNAPSHOT),
+            "historyDir": str(HISTORY_DIR),
+            "previousCityCount": previous_count,
+            "currentCityCount": current_count,
+            "minCityFloor": MIN_CITY_FLOOR,
+        },
     }
     write_status(status)
+
+    # Only advance the durable full-city snapshot when the poll is healthy.
+    # This stops a thin/partial Core response from overwriting recovery data.
+    if not failures and current_count > 0:
+        persist_full_city_snapshot(
+            checked_at=checked_at,
+            traffic=traffic,
+            totals=totals,
+            geographies=geographies,
+            cities=cities,
+            campaigns=campaigns,
+        )
 
     if failures:
         raise SystemExit("; ".join(failures))

@@ -1,0 +1,28 @@
+[Unit]
+Description=BETMAN Growth Agent (read-only dry run)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=betman
+Group=betman
+WorkingDirectory=/opt/betman/betman_hq
+EnvironmentFile=/etc/betman/growth-agent.env
+ExecStart=/usr/bin/env npm run growth-agent
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+CapabilityBoundingSet=
+ReadWritePaths=/opt/betman/betman_hq/runtime/growth-agent
+MemoryMax=512M
+CPUQuota=50%
+TimeoutStartSec=5min
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

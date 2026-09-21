@@ -25,6 +25,7 @@ BETMAN HQ is the company scorecard, financial forecast, P&L, cash flow, salary t
 | `/tent` | **TENT Treasury** — Separate from operating revenue |
 | `/assumptions` | **Assumptions** — Editable page that drives all forecast calculations |
 | `/kpi` | **KPI Dashboard** — Full KPI grid with live and forecast metrics |
+| `/growth` | **Growth Agent** — Dry-run autonomous acquisition decisions and audit status |
 
 ---
 
@@ -208,3 +209,7 @@ The data layer is designed for easy extension:
 | Betting treasury (TENT) | Replace demo data in `src/app/tent/page.tsx` |
 | Persistent assumptions | Replace `src/data/store.ts` with Prisma/Postgres |
 | Stripe Payment Intents (day passes) | Extend `fetchStripeSubscriberCounts` in `stripe.ts` |
+
+## Growth Agent
+
+Build the read-only worker with `npm run build:growth-agent` and execute one collection cycle with `npm run growth-agent`. It fails closed when Meta or Core is unavailable, persists an atomic current snapshot and appends each complete decision run to an audit ledger. See [docs/GROWTH_AGENT.md](docs/GROWTH_AGENT.md) for the safety model and promotion gates.

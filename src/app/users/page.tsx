@@ -12,12 +12,12 @@ const USER_FILTERS = ['signups', 'active', 'trials', 'paid'] as const;
 type UserFilter = typeof USER_FILTERS[number];
 
 interface UsersPageProps {
-  searchParams?: {
+  searchParams?: Promise<{
     q?: string;
     page?: string;
     user?: string;
     filter?: string;
-  };
+  }>;
 }
 
 function fmtDate(value: string | undefined): string {
@@ -157,6 +157,7 @@ function UserDetail({ user }: { user: ProvisionedUser }) {
 }
 
 export default async function UsersPage({ searchParams }: UsersPageProps) {
+  const params = await searchParams;
   const [summary, stripeCounts] = await Promise.all([
     fetchCoreAuthSummary().catch(() => null),
     fetchStripeSubscriberCounts().catch(() => null),
@@ -166,15 +167,15 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
     .filter((user): user is ProvisionedUser => user !== null);
   const paidEmails = buildPaidAccountSet(users, stripeCounts);
 
-  const query = String(searchParams?.q || '').trim().toLowerCase();
-  const filter = normalizeFilter(searchParams?.filter);
+  const query = String(params?.q || '').trim().toLowerCase();
+  const filter = normalizeFilter(params?.filter);
   const filteredByType = users.filter((user) => matchesFilter(user, filter, paidEmails));
   const filteredUsers = query ? filteredByType.filter((user) => includesQuery(user, query)) : filteredByType;
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
-  const requestedPage = Number.parseInt(String(searchParams?.page || '1'), 10);
+  const requestedPage = Number.parseInt(String(params?.page || '1'), 10);
   const currentPage = Math.min(pageCount, Math.max(1, Number.isFinite(requestedPage) ? requestedPage : 1));
   const visibleUsers = filteredUsers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const selectedEmail = String(searchParams?.user || '').toLowerCase();
+  const selectedEmail = String(params?.user || '').toLowerCase();
   const selectedUser = users.find((user) => user.email.toLowerCase() === selectedEmail) || null;
   const activeUsers = users.filter(isActiveUser).length;
   const trialUsers = users.filter(isTrialUser).length;
@@ -216,7 +217,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
           {filter && <input type="hidden" name="filter" value={filter} />}
           <input
             name="q"
-            defaultValue={searchParams?.q || ''}
+            defaultValue={params?.q || ''}
             type="search"
             placeholder="Search name, email, plan, source or campaign"
             className="w-full max-w-xl rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run BETMAN Growth Agent every four hours
+
+[Timer]
+OnCalendar=*-*-* 00,04,08,12,16,20:17:00
+Persistent=true
+RandomizedDelaySec=180
+Unit=betman-growth-agent.service
+
+[Install]
+WantedBy=timers.target

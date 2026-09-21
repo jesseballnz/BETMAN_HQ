@@ -69,6 +69,19 @@ export interface GrowthSnapshot {
     sources: Record<string, string>;
   };
   funnel: GrowthFunnel;
+  attribution?: {
+    commercialSignups: number;
+    campaignAssignedSignups: number;
+    metaMatchedSignups: number;
+    trials: number;
+    metaMatchedTrials: number;
+    paid: number;
+    metaMatchedPaid: number;
+    signupAssignmentPct: number;
+    signupMatchPct: number;
+    trialMatchPct: number;
+    paidMatchPct: number;
+  };
   campaigns: CampaignPerformance[];
   decisions: GrowthDecision[];
 }

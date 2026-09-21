@@ -8,7 +8,7 @@ Joins Meta spend to signups, activated trials and paid customers. Recommends bud
 
 **Outcome:** lower paid CAC and faster learning.
 
-The first release is deployed on BETMAN-WORKER. It collects Meta and Core every four
+The first release is deployed on BETMAN-WORKER. It collects Meta, Core and Stripe every four
 hours, persists an append-only decision ledger and contains no campaign-write path.
 Promotion requires the gates in `docs/GROWTH_AGENT.md`.
 

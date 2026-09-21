@@ -4,7 +4,7 @@ The Growth Agent is BETMAN-WORKER's first autonomous commercial capability. Its 
 
 ## Safety model
 
-The first release is permanently dry-run. It reads Meta and Core, writes a local snapshot and append-only audit ledger, and produces deterministic recommendations. It contains no Meta write path.
+The first release is permanently dry-run. It reads Meta, Core and Stripe, writes a local snapshot and append-only audit ledger, and produces deterministic recommendations. It contains no Meta or Stripe write path.
 
 Hard limits remain outside the language model:
 
@@ -57,11 +57,28 @@ the audit ledger.
 
 1. Collect the last seven complete Pacific/Auckland calendar days from Meta.
 2. Read timestamped commercial accounts from Core.
-3. Attribute outcomes only when an exact campaign identifier persists to the account.
-4. Keep unassigned outcomes visible without crediting a campaign.
-5. Evaluate each campaign with deterministic pause, reduce, hold and scale rules.
-6. Atomically replace the current snapshot and append the full run to the audit ledger.
-7. Surface failures and decisions in HQ.
+3. Read confirmed active paid customers from Stripe and match them to Core by normalized email until Stripe customer IDs are exposed by the HQ summary.
+4. Attribute outcomes only when an exact Meta campaign identifier persists to the account.
+5. Keep assigned-but-unmatched and unassigned outcomes visible without crediting a campaign.
+6. Publish campaign-assignment, exact-signup, trial and paid-match coverage.
+7. Evaluate each campaign with deterministic pause, reduce, hold and scale rules.
+8. Atomically replace the current snapshot and append the full run to the audit ledger.
+9. Surface failures, coverage and decisions in HQ.
+
+## OpenClaw skill stack
+
+- `growth-supervisor`
+- `growth-attribution-controller`
+- `growth-experiment-controller`
+- `growth-creative-laboratory`
+- `growth-conversion-optimizer`
+- `growth-unit-economics`
+- `growth-reliability-controller`
+- `weekly-ad-growth-report`
+- `trial-conversion-funnel`
+- `production-change-guardrail`
+
+The supervisor selects one commercial constraint per cycle and routes it to the narrowest specialist. Skills propose and evaluate work; deterministic code still controls permissions, spend and promotion.
 
 ## AI role
 
@@ -79,7 +96,7 @@ Credentials stay in host-owned protected configuration and must never appear in 
 
 ### Observe to Recommend
 
-- seven consecutive healthy collection days;
+- seven consecutive healthy Meta, Core and Stripe collection days;
 - campaign totals reconcile with Meta;
 - signup timestamps and tester exclusions verified;
 - no secret material in output or logs.

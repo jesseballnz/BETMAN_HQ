@@ -1,5 +1,7 @@
 import { appendFile, mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fetchStripeSubscriberCounts } from '../src/lib/stripe';
+import { attributeUserOutcomes } from '../src/lib/growth/attribution';
 import { aggregateFunnel, decidePortfolio, DEFAULT_GROWTH_GUARDRAILS } from '../src/lib/growth/decisionEngine';
 import type { CampaignPerformance, GrowthGuardrails, GrowthSnapshot } from '../src/lib/growth/types';
 
@@ -16,6 +18,7 @@ interface MetaRow {
 }
 
 interface CoreUser {
+  email?: string;
   createdAt?: string;
   trialStartedAt?: string;
   campaign?: string;
@@ -135,14 +138,7 @@ async function fetchMetaCampaigns(window: ReturnType<typeof lastCompleteSevenDay
   return Array.from(campaigns.values());
 }
 
-function dateStartUtc(date: string): number {
-  return new Date(`${date}T00:00:00Z`).getTime();
-}
-
-async function fetchCoreOutcomes(
-  campaigns: CampaignPerformance[],
-  window: ReturnType<typeof lastCompleteSevenDays>,
-) {
+async function fetchCoreUsers(): Promise<CoreUser[]> {
   const baseUrl = (process.env.BETMAN_CORE_URL || '').replace(/\/$/, '');
   const token = process.env.BETMAN_HQ_AUTH_SUMMARY_TOKEN || '';
   if (!baseUrl || !token) throw new Error('Core auth summary is not configured');
@@ -150,27 +146,7 @@ async function fetchCoreOutcomes(
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   });
   if (!summary.ok) throw new Error('Core auth summary returned ok=false');
-
-  const start = dateStartUtc(window.since);
-  const end = dateStartUtc(window.until) + 24 * 60 * 60 * 1000;
-  const byCampaign = new Map(campaigns.map((campaign) => [campaign.campaignId, campaign]));
-  const unattributed = { commercialSignups: 0, trials: 0, paid: 0 };
-
-  for (const user of summary.provisionedUsers || []) {
-    const created = user.createdAt ? new Date(user.createdAt).getTime() : 0;
-    if (!created || created < start || created >= end) continue;
-    if (String(user.planType || '').toLowerCase() === 'tester') continue;
-    const campaignId = String(user.campaign || '').trim();
-    const target = campaignId && campaignId.toLowerCase() !== 'unassigned' ? byCampaign.get(campaignId) : undefined;
-    if (target) {
-      target.signups += 1;
-      if (user.trialStartedAt) target.trials += 1;
-    } else {
-      unattributed.commercialSignups += 1;
-      if (user.trialStartedAt) unattributed.trials += 1;
-    }
-  }
-  return unattributed;
+  return summary.provisionedUsers || [];
 }
 
 function guardrailsFromEnvironment(): GrowthGuardrails {
@@ -202,6 +178,9 @@ async function main() {
   const sources: Record<string, string> = {};
   let campaigns: CampaignPerformance[] = [];
   let unattributed = { commercialSignups: 0, trials: 0, paid: 0 };
+  let attribution;
+  let coreUsers: CoreUser[] = [];
+  let paidEmails = new Set<string>();
 
   try {
     campaigns = await fetchMetaCampaigns(window);
@@ -211,11 +190,27 @@ async function main() {
     failures.push(error instanceof Error ? error.message : 'Meta collection failed');
   }
   try {
-    unattributed = await fetchCoreOutcomes(campaigns, window);
+    coreUsers = await fetchCoreUsers();
     sources.core = 'live';
   } catch (error) {
     sources.core = 'failed';
     failures.push(error instanceof Error ? error.message : 'Core collection failed');
+  }
+  try {
+    const stripe = await fetchStripeSubscriberCounts();
+    if (!stripe.isLive) throw new Error('Stripe is not configured');
+    paidEmails = new Set(stripe.payingCustomerEmails.map((email) => email.trim().toLowerCase()));
+    sources.stripe = 'live';
+  } catch (error) {
+    sources.stripe = 'failed';
+    failures.push(error instanceof Error ? error.message : 'Stripe collection failed');
+  }
+
+  if (sources.core === 'live') {
+    const joined = attributeUserOutcomes(campaigns, coreUsers, window, paidEmails);
+    campaigns = joined.campaigns;
+    unattributed = joined.unattributed;
+    attribution = joined.coverage;
   }
 
   const snapshot: GrowthSnapshot = {
@@ -225,6 +220,7 @@ async function main() {
     window,
     health: { ok: failures.length === 0, failures, sources },
     funnel: aggregateFunnel(campaigns, unattributed),
+    attribution,
     campaigns,
     decisions: decidePortfolio(campaigns, guardrailsFromEnvironment()),
   };

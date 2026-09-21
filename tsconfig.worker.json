@@ -11,6 +11,7 @@
   },
   "include": [
     "worker/**/*.ts",
-    "src/lib/growth/**/*.ts"
+    "src/lib/growth/**/*.ts",
+    "src/lib/stripe.ts"
   ]
 }

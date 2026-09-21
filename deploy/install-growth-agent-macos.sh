@@ -18,6 +18,7 @@ launch_agents="$HOME/Library/LaunchAgents"
 plist="$launch_agents/ai.betman.growth-agent.plist"
 node_bin=/usr/local/opt/node/bin/node
 npm_bin=/usr/local/opt/node/bin/npm
+export PATH="$(dirname "$node_bin"):/usr/bin:/bin:/usr/sbin:/sbin"
 
 [[ -x "$node_bin" && -x "$npm_bin" ]] || {
   echo "The existing OpenClaw Node.js runtime is required." >&2

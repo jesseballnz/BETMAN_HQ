@@ -19,9 +19,11 @@ interface MetaRow {
 
 interface CoreUser {
   email?: string;
+  stripeCustomerId?: string;
   createdAt?: string;
   trialStartedAt?: string;
   campaign?: string;
+  campaignId?: string;
   planType?: string;
   subscriptionActive?: boolean;
   subscriptionStatus?: string;
@@ -181,6 +183,7 @@ async function main() {
   let attribution;
   let coreUsers: CoreUser[] = [];
   let paidEmails = new Set<string>();
+  let paidCustomerIds = new Set<string>();
 
   try {
     campaigns = await fetchMetaCampaigns(window);
@@ -200,6 +203,7 @@ async function main() {
     const stripe = await fetchStripeSubscriberCounts();
     if (!stripe.isLive) throw new Error('Stripe is not configured');
     paidEmails = new Set(stripe.payingCustomerEmails.map((email) => email.trim().toLowerCase()));
+    paidCustomerIds = new Set(stripe.payingCustomerIds.map((customerId) => customerId.trim()).filter(Boolean));
     sources.stripe = 'live';
   } catch (error) {
     sources.stripe = 'failed';
@@ -207,7 +211,7 @@ async function main() {
   }
 
   if (sources.core === 'live') {
-    const joined = attributeUserOutcomes(campaigns, coreUsers, window, paidEmails);
+    const joined = attributeUserOutcomes(campaigns, coreUsers, window, paidEmails, paidCustomerIds);
     campaigns = joined.campaigns;
     unattributed = joined.unattributed;
     attribution = joined.coverage;

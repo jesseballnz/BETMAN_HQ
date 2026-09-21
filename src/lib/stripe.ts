@@ -112,6 +112,8 @@ export interface StripeSubscriberCounts {
   totalProvisionings: number;
   /** Normalized emails for matching Stripe-paid customers to Core profiles. Server-side only. */
   payingCustomerEmails: string[];
+  /** Stable Stripe customer IDs for matching paid customers to Core profiles. Server-side only. */
+  payingCustomerIds: string[];
   /** ISO timestamp of when this data was fetched */
   fetchedAt: string;
   /** true when STRIPE_SECRET_KEY is configured, false when using seed data */
@@ -208,6 +210,7 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
       totalRecentCheckoutSessions: 0,
       totalProvisionings: 0,
       payingCustomerEmails: [],
+      payingCustomerIds: [],
       fetchedAt,
       isLive: false,
     };
@@ -284,6 +287,7 @@ export async function fetchStripeSubscriberCounts(): Promise<StripeSubscriberCou
     payingCustomerEmails: Array.from(new Set(paidSubscriptions
       .map((subscription) => subscription.customerEmail)
       .filter(Boolean))),
+    payingCustomerIds: Array.from(paidCustomerKeys),
     fetchedAt,
     isLive: true,
   };

@@ -2,9 +2,11 @@ import type { CampaignPerformance } from './types';
 
 export interface AttributableUser {
   email?: string;
+  stripeCustomerId?: string;
   createdAt?: string;
   trialStartedAt?: string;
   campaign?: string;
+  campaignId?: string;
   planType?: string;
 }
 
@@ -37,6 +39,7 @@ export function attributeUserOutcomes(
   users: AttributableUser[],
   window: Window,
   paidEmails: Set<string>,
+  paidCustomerIds: Set<string> = new Set(),
 ) {
   const attributedCampaigns = campaigns.map((campaign) => ({ ...campaign }));
   const byCampaign = new Map(attributedCampaigns.map((campaign) => [campaign.campaignId, campaign]));
@@ -55,11 +58,12 @@ export function attributeUserOutcomes(
     if (!created || created < start || created >= end) continue;
     if (String(user.planType || '').toLowerCase() === 'tester') continue;
 
-    const campaignId = String(user.campaign || '').trim();
+    const campaignId = String(user.campaignId || user.campaign || '').trim();
     const assigned = Boolean(campaignId && campaignId.toLowerCase() !== 'unassigned');
     const target = assigned ? byCampaign.get(campaignId) : undefined;
     const trial = Boolean(user.trialStartedAt);
-    const paid = paidEmails.has(String(user.email || '').trim().toLowerCase());
+    const paid = paidCustomerIds.has(String(user.stripeCustomerId || '').trim())
+      || paidEmails.has(String(user.email || '').trim().toLowerCase());
 
     if (assigned) campaignAssignedSignups += 1;
     if (trial) totalTrials += 1;

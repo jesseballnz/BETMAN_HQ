@@ -52,4 +52,20 @@ describe('growth attribution', () => {
     expect(result.coverage.commercialSignups).toBe(0);
     expect(result.campaigns[0]).toMatchObject({ signups: 0, trials: 0, paid: 0 });
   });
+
+  test('prefers stable campaign and Stripe customer IDs over names and email', () => {
+    const result = attributeUserOutcomes([campaign('meta-1')], [
+      {
+        email: 'changed@example.com',
+        stripeCustomerId: 'cus_paid_1',
+        createdAt: '2026-09-16T00:00:00Z',
+        campaign: 'Friendly campaign name',
+        campaignId: 'meta-1',
+        planType: 'single',
+      },
+    ], window, new Set(), new Set(['cus_paid_1']));
+
+    expect(result.campaigns[0]).toMatchObject({ signups: 1, paid: 1 });
+    expect(result.coverage).toMatchObject({ signupMatchPct: 100, paidMatchPct: 100 });
+  });
 });

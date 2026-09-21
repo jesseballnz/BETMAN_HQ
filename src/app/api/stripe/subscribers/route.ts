@@ -11,6 +11,7 @@ export async function GET() {
     if (cached) {
       const publicCounts: Partial<typeof cached> = { ...cached };
       delete publicCounts.payingCustomerEmails;
+      delete publicCounts.payingCustomerIds;
       return NextResponse.json({ ...publicCounts, fromCache: true });
     }
 
@@ -20,6 +21,7 @@ export async function GET() {
     }
     const publicCounts: Partial<typeof counts> = { ...counts };
     delete publicCounts.payingCustomerEmails;
+    delete publicCounts.payingCustomerIds;
     return NextResponse.json({ ...publicCounts, fromCache: false });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

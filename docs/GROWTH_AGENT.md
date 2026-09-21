@@ -80,6 +80,19 @@ the audit ledger.
 
 The supervisor selects one commercial constraint per cycle and routes it to the narrowest specialist. Skills propose and evaluate work; deterministic code still controls permissions, spend and promotion.
 
+## Autonomous supervisor
+
+- OpenClaw agent: `betman-growth` / `BETMAN-GROWTH`
+- Workspace: `~/.openclaw/workspace/betman-agents/growth`
+- Schedule: minute 35 every four hours, after deterministic collection at minute 17
+- Automation declaration: `growth-supervisor-cycle`
+- Stage: observe
+- Output: `state/latest-recommendation.md`
+- Append-only learning ledger: `state/recommendations.jsonl`
+- Tool boundary: workspace read/write plus shell reads; no advertising, Stripe, Core, or Production mutation tools
+
+Every cycle must use `growth-supervisor`, name exactly one commercial constraint, route it to one specialist skill and persist an action packet. Failed or stale data produces a blocked cycle instead of a recommendation.
+
 ## AI role
 
 The deterministic worker builds trusted numbers. The local OpenClaw agent, authenticated as `ai@betman.co.nz`, consumes the snapshot to:

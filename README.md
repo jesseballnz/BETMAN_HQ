@@ -189,7 +189,7 @@ src/
 
 ## Tech stack
 
-- **Next.js 14** (App Router, server components)
+- **Next.js 16** (App Router, server components)
 - **TypeScript**
 - **Tailwind CSS** (dark BETMAN theme)
 - **Recharts** (charts)

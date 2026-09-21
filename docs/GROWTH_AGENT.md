@@ -19,12 +19,39 @@ Hard limits remain outside the language model:
 ## Runtime
 
 - Host: `BETMAN-WORKER` (`192.168.1.171`)
-- User: unprivileged `betman`
-- Schedule: every four hours at minute 17, with jitter
-- Snapshot: `/opt/betman/betman_hq/runtime/growth-agent/latest.json`
-- Audit ledger: `/opt/betman/betman_hq/runtime/growth-agent/audit.jsonl`
+- Platform: macOS 15 on Intel, using a user-level launchd agent
+- User: `jesseball`; the Growth Agent does not run as root
+- Release: `~/BETMAN/betman-hq-growth-agent`
+- Service: `ai.betman.growth-agent`
+- Schedule: every four hours at minute 17 and once when loaded
+- Protected configuration: `~/Library/Application Support/BETMAN/growth-agent.env` (`0600`)
+- Snapshot: `~/BETMAN/betman-hq-growth-agent/runtime/growth-agent/latest.json`
+- Audit ledger: `~/BETMAN/betman-hq-growth-agent/runtime/growth-agent/audit.jsonl`
 - HQ route: `/growth`
 - Health route: `/api/growth/health`
+
+The launchd service is intentionally separate from `ai.openclaw.gateway`. Installing or
+running the Growth Agent must not restart the OpenClaw gateway or any existing BETMAN
+trading agent.
+
+## Operations
+
+```bash
+# Inspect service state
+launchctl print gui/$(id -u)/ai.betman.growth-agent
+
+# Run an immediate scheduled cycle
+launchctl kickstart -k gui/$(id -u)/ai.betman.growth-agent
+
+# Read logs
+tail -100 ~/Library/Logs/BETMAN/growth-agent.out.log
+tail -100 ~/Library/Logs/BETMAN/growth-agent.err.log
+```
+
+An idle `not running` state with `last exit code = 0` is healthy because the service is
+a scheduled one-shot. Any source failure writes an unhealthy snapshot, appends it to the
+ledger and exits non-zero. Restore the source first, then run a new cycle; never delete
+the audit ledger.
 
 ## Operating sequence
 

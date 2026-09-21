@@ -2,11 +2,15 @@
 
 Build capabilities in economic order. Each skill must have trusted inputs, a measurable outcome and a constrained action surface.
 
-## 1. Acquisition optimiser — building now
+## 1. Acquisition optimiser — live in read-only calibration
 
 Joins Meta spend to signups, activated trials and paid customers. Recommends budget allocation and later executes inside hard limits.
 
 **Outcome:** lower paid CAC and faster learning.
+
+The first release is deployed on BETMAN-WORKER. It collects Meta and Core every four
+hours, persists an append-only decision ledger and contains no campaign-write path.
+Promotion requires the gates in `docs/GROWTH_AGENT.md`.
 
 ## 2. Attribution and experiment controller — next
 

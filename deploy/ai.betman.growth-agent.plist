@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.betman.growth-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__HOME__/BETMAN/betman-hq-growth-agent/deploy/run-growth-agent-macos.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__HOME__/BETMAN/betman-hq-growth-agent</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>17</integer></dict>
+    <dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>17</integer></dict>
+    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>17</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>17</integer></dict>
+    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>17</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>17</integer></dict>
+  </array>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>Umask</key>
+  <integer>23</integer>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/BETMAN/growth-agent.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/BETMAN/growth-agent.err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,35 @@
+#!/bin/bash
+set -euo pipefail
+
+target=/opt/betman/betman_hq/runtime/growth-agent/latest.json
+target_dir=${target%/*}
+tmp=$(mktemp "$target_dir/.latest.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+
+umask 027
+/usr/bin/head -c 1048577 > "$tmp"
+
+/usr/bin/python3 - "$tmp" <<'PY'
+import json
+import os
+import sys
+
+path = sys.argv[1]
+if os.path.getsize(path) > 1048576:
+    raise SystemExit("snapshot_too_large")
+with open(path, "r", encoding="utf-8") as handle:
+    snapshot = json.load(handle)
+if snapshot.get("schemaVersion") != 1:
+    raise SystemExit("invalid_schema")
+if not isinstance(snapshot.get("generatedAt"), str):
+    raise SystemExit("missing_generated_at")
+if not isinstance(snapshot.get("health"), dict):
+    raise SystemExit("missing_health")
+if not isinstance(snapshot.get("decisions"), list):
+    raise SystemExit("missing_decisions")
+PY
+
+/bin/chmod 0640 "$tmp"
+/bin/mv -f "$tmp" "$target"
+trap - EXIT
+

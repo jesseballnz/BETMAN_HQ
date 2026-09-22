@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: '/salary', label: 'Salary' },
   { href: '/tent', label: 'TENT' },
   { href: '/conversion', label: 'Conversion' },
+  { href: '/growth', label: 'Growth Agent' },
   { href: '/users', label: 'Users' },
   { href: '/assumptions', label: 'Assumptions' },
   { href: '/kpi', label: 'KPIs' },

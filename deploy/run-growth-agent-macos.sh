@@ -29,4 +29,6 @@ while IFS='=' read -r key value; do
 done < "$env_file"
 
 cd "$app_dir"
-exec "$node_bin" dist-worker/worker/growth-agent.js
+"$app_dir/deploy/push-growth-snapshot-macos.sh" --pull
+"$node_bin" dist-worker/worker/growth-agent.js
+"$app_dir/deploy/push-growth-snapshot-macos.sh"

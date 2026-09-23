@@ -1,9 +1,10 @@
-import { appendFile, mkdir, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fetchStripeSubscriberCounts } from '../src/lib/stripe';
 import { attributeUserOutcomes } from '../src/lib/growth/attribution';
 import { aggregateFunnel, decidePortfolio, DEFAULT_GROWTH_GUARDRAILS } from '../src/lib/growth/decisionEngine';
-import type { CampaignPerformance, GrowthGuardrails, GrowthSnapshot } from '../src/lib/growth/types';
+import { executeGrowthActions, verifyMetaWritePermission, type GrowthExecutionConfig } from '../src/lib/growth/executor';
+import type { CampaignPerformance, GrowthAutomationState, GrowthGuardrails, GrowthSnapshot } from '../src/lib/growth/types';
 
 interface MetaAction { action_type?: string; value?: string | number }
 interface MetaRow {
@@ -34,6 +35,8 @@ interface CoreSummary { ok?: boolean; provisionedUsers?: CoreUser[] }
 const OUTPUT = process.env.BETMAN_GROWTH_STATUS || '/opt/betman/betman_hq/runtime/growth-agent/latest.json';
 const LEDGER = process.env.BETMAN_GROWTH_LEDGER || '/opt/betman/betman_hq/runtime/growth-agent/audit.jsonl';
 const TIME_ZONE = process.env.BETMAN_GROWTH_TIME_ZONE || 'Pacific/Auckland';
+const CONTROL = process.env.BETMAN_GROWTH_CONTROL || path.join(path.dirname(OUTPUT), 'control.json');
+const EXECUTION_LEDGER = process.env.BETMAN_GROWTH_EXECUTION_LEDGER || path.join(path.dirname(OUTPUT), 'execution-audit.jsonl');
 
 function numberValue(value: unknown): number {
   const parsed = Number(value || 0);
@@ -173,6 +176,44 @@ async function atomicJsonWrite(file: string, payload: unknown) {
   await rename(temporary, file);
 }
 
+async function requestedMode(): Promise<'watch' | 'live'> {
+  try {
+    const parsed = JSON.parse(await readFile(CONTROL, 'utf8')) as { mode?: string };
+    return parsed.mode === 'live' ? 'live' : 'watch';
+  } catch {
+    return 'watch';
+  }
+}
+
+async function hasSevenConsecutiveHealthyDays(): Promise<boolean> {
+  try {
+    const rows = (await readFile(LEDGER, 'utf8')).split('\n').filter(Boolean).flatMap((line) => {
+      try { return [JSON.parse(line) as GrowthSnapshot]; } catch { return []; }
+    });
+    const healthyDates = new Set(rows
+      .filter((row) => row.health?.ok && ['meta', 'core', 'stripe'].every((source) => row.health.sources?.[source] === 'live'))
+      .map((row) => dateInTimeZone(new Date(row.generatedAt), TIME_ZONE)));
+    const ordered = [...healthyDates].sort();
+    if (ordered.length < 7) return false;
+    const recent = ordered.slice(-7).map((value) => Date.parse(`${value}T12:00:00Z`));
+    return recent.every((value, index) => index === 0 || value - recent[index - 1] === 86_400_000);
+  } catch {
+    return false;
+  }
+}
+
+function executionConfig(): GrowthExecutionConfig {
+  return {
+    token: process.env.META_ADS_WRITE_ACCESS_TOKEN || '',
+    apiVersion: process.env.META_ADS_API_VERSION || 'v20.0',
+    allowedCampaignIds: new Set((process.env.BETMAN_GROWTH_LIVE_CAMPAIGN_IDS || '').split(',').map((value) => value.trim()).filter(Boolean)),
+    maximumPortfolioDailySpend: numberValue(process.env.BETMAN_GROWTH_LIVE_MAX_DAILY_SPEND),
+    maximumBudgetChangePct: Math.min(20, numberValue(process.env.BETMAN_GROWTH_MAX_BUDGET_CHANGE_PCT || DEFAULT_GROWTH_GUARDRAILS.maximumBudgetChangePct)),
+    minimumChangeIntervalHours: Math.max(48, numberValue(process.env.BETMAN_GROWTH_LIVE_CHANGE_INTERVAL_HOURS || 48)),
+    ledgerFile: EXECUTION_LEDGER,
+  };
+}
+
 async function main() {
   const generatedAt = new Date().toISOString();
   const window = lastCompleteSevenDays();
@@ -217,16 +258,56 @@ async function main() {
     attribution = joined.coverage;
   }
 
+  const decisions = decidePortfolio(campaigns, guardrailsFromEnvironment());
+  const desiredMode = await requestedMode();
+  const config = executionConfig();
+  const blockers: string[] = [];
+  if (process.env.BETMAN_GROWTH_EXECUTION_ENABLED !== 'true') blockers.push('Worker live execution kill switch is disabled');
+  if (!config.token) blockers.push('Separate Meta ads_management identity not installed');
+  if (config.token && config.token === process.env.META_ADS_ACCESS_TOKEN) blockers.push('Meta write identity must be separate from the read identity');
+  if (!config.allowedCampaignIds.size) blockers.push('Live campaign allowlist is empty');
+  if (!(config.maximumPortfolioDailySpend > 0)) blockers.push('Portfolio daily spend ceiling is not configured');
+  if (!(await hasSevenConsecutiveHealthyDays())) blockers.push('Seven consecutive healthy collection days are not yet proven');
+  const minimumAttributionPct = Math.max(0, numberValue(process.env.BETMAN_GROWTH_LIVE_MIN_ATTRIBUTION_PCT || 80));
+  if (!attribution || attribution.signupMatchPct < minimumAttributionPct) blockers.push(`Exact signup attribution is below ${minimumAttributionPct}%`);
+  if (failures.length) blockers.push('One or more live data sources are unhealthy');
+  if (config.token && !blockers.some((value) => value.includes('separate from'))) {
+    try {
+      if (!(await verifyMetaWritePermission(config))) blockers.push('Meta write identity lacks ads_management permission');
+    } catch {
+      blockers.push('Meta write permission could not be verified');
+    }
+  }
+  const liveReady = blockers.length === 0;
+  const effectiveMode = desiredMode === 'live' && liveReady ? 'live' : 'watch';
+  let actions: GrowthAutomationState['actions'] = decisions.map((decision) => ({
+    campaignId: decision.campaignId,
+    action: decision.action,
+    status: decision.action === 'hold' ? 'resolved' as const : 'watching' as const,
+    detail: decision.action === 'hold' ? 'No campaign change required.' : 'Observed in Watch mode; no campaign write performed.',
+  }));
+  if (effectiveMode === 'live') {
+    actions = await executeGrowthActions(decisions, generatedAt, config);
+    if (actions.some((action) => action.status === 'failed')) failures.push('One or more live campaign actions failed');
+  }
+
   const snapshot: GrowthSnapshot = {
     schemaVersion: 1,
     generatedAt,
-    mode: 'dry-run',
+    mode: effectiveMode === 'live' ? 'execute' : 'dry-run',
     window,
     health: { ok: failures.length === 0, failures, sources },
     funnel: aggregateFunnel(campaigns, unattributed),
     attribution,
     campaigns,
-    decisions: decidePortfolio(campaigns, guardrailsFromEnvironment()),
+    decisions,
+    automation: {
+      requestedMode: desiredMode,
+      effectiveMode,
+      liveReady,
+      blockers,
+      actions,
+    },
   };
   await atomicJsonWrite(OUTPUT, snapshot);
   await mkdir(path.dirname(LEDGER), { recursive: true });

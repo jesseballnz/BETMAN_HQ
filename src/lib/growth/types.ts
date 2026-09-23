@@ -41,6 +41,20 @@ export interface GrowthDecision {
   };
 }
 
+export interface GrowthAutomationState {
+  requestedMode: 'watch' | 'live';
+  effectiveMode: 'watch' | 'live';
+  liveReady: boolean;
+  blockers: string[];
+  actions?: Array<{
+    campaignId: string;
+    action: GrowthAction;
+    status: 'watching' | 'resolved' | 'executed' | 'blocked' | 'failed';
+    detail: string;
+    resolvedAt?: string;
+  }>;
+}
+
 export interface GrowthFunnel {
   spend: number;
   impressions: number;
@@ -84,4 +98,5 @@ export interface GrowthSnapshot {
   };
   campaigns: CampaignPerformance[];
   decisions: GrowthDecision[];
+  automation?: GrowthAutomationState;
 }

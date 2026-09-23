@@ -18,6 +18,9 @@ const TLS_KEY = process.env.BETMAN_HQ_TLS_KEY || process.env.BETMAN_TLS_KEY || '
 const AUTH_SECRET = process.env.BETMAN_HQ_AUTH_SECRET || '';
 const ALLOWED_USER = String(process.env.ALLOWED_USER || 'betman').trim().toLowerCase();
 const PASSWORD_SETUP_URL = process.env.BETMAN_PASSWORD_SETUP_URL || '';
+const GROWTH_CONTROL_FILE = process.env.BETMAN_GROWTH_CONTROL || '/opt/betman/betman_hq/runtime/growth-agent/control.json';
+const GROWTH_CONTROL_AUDIT = process.env.BETMAN_GROWTH_CONTROL_AUDIT || '/opt/betman/betman_hq/runtime/growth-agent/control-audit.jsonl';
+const GROWTH_SNAPSHOT_FILE = process.env.BETMAN_GROWTH_STATUS || '/opt/betman/betman_hq/runtime/growth-agent/latest.json';
 const COOKIE = 'bm_hq_token';
 const MAX_AGE = Number(process.env.BETMAN_HQ_TOKEN_MAX_AGE_SECONDS || 30 * 60);
 
@@ -162,6 +165,79 @@ function coreLogin(username, password) {
     upstream.on('error', () => resolve({ status: 502, body: {} }));
     upstream.end(payload);
   });
+}
+
+function readJsonFile(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function growthControl() {
+  const parsed = readJsonFile(GROWTH_CONTROL_FILE, {});
+  return {
+    schemaVersion: 1,
+    mode: parsed.mode === 'live' ? 'live' : 'watch',
+    updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : null,
+    updatedBy: typeof parsed.updatedBy === 'string' ? parsed.updatedBy : null,
+  };
+}
+
+function growthReadiness() {
+  const snapshot = readJsonFile(GROWTH_SNAPSHOT_FILE, {});
+  const automation = snapshot && typeof snapshot.automation === 'object' ? snapshot.automation : {};
+  const blockers = Array.isArray(automation.blockers)
+    ? automation.blockers.filter((value) => typeof value === 'string' && value.trim())
+    : ['Worker capability report pending', 'Separate Meta ads_management identity not installed'];
+  return { liveReady: automation.liveReady === true && blockers.length === 0, blockers };
+}
+
+function writeGrowthControl(mode, user) {
+  const control = {
+    schemaVersion: 1,
+    mode,
+    updatedAt: new Date().toISOString(),
+    updatedBy: normalizeUser(user),
+  };
+  const directory = require('node:path').dirname(GROWTH_CONTROL_FILE);
+  fs.mkdirSync(directory, { recursive: true, mode: 0o750 });
+  const temporary = `${GROWTH_CONTROL_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(control, null, 2)}\n`, { mode: 0o640 });
+  fs.renameSync(temporary, GROWTH_CONTROL_FILE);
+  fs.appendFileSync(GROWTH_CONTROL_AUDIT, `${JSON.stringify({ ...control, event: 'mode_changed' })}\n`, { mode: 0o640 });
+  return control;
+}
+
+async function handleGrowthControl(req, res, payload) {
+  const readiness = growthReadiness();
+  if (req.method === 'GET') return json(res, 200, { ok: true, control: growthControl(), ...readiness });
+  if (req.method !== 'POST') return json(res, 405, { ok: false, error: 'method_not_allowed' });
+  if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
+    return json(res, 415, { ok: false, error: 'json_required' });
+  }
+  let body;
+  try {
+    body = JSON.parse(await readBody(req) || '{}');
+  } catch {
+    return json(res, 400, { ok: false, error: 'invalid_json' });
+  }
+  const mode = String(body.mode || '').toLowerCase();
+  const password = String(body.password || '');
+  if (mode !== 'watch' && mode !== 'live') return json(res, 400, { ok: false, error: 'invalid_mode' });
+  if (!password) return json(res, 400, { ok: false, error: 'password_required' });
+
+  const result = await coreLogin(payload.sub, password);
+  const user = normalizeUser(result.body?.user || result.body?.principal?.username || payload.sub);
+  if (result.status < 200 || result.status >= 300 || !result.body?.ok || (ALLOWED_USER && user !== ALLOWED_USER)) {
+    return json(res, 401, { ok: false, error: 'invalid_credentials' });
+  }
+  if (mode === 'live' && !readiness.liveReady) {
+    return json(res, 409, { ok: false, error: 'live_not_ready', blockers: readiness.blockers });
+  }
+  const control = writeGrowthControl(mode, user);
+  return json(res, 200, { ok: true, control, ...growthReadiness() });
 }
 
 function loginPage(req, res, message = '') {
@@ -361,6 +437,7 @@ async function handle(req, res) {
     return res.end(JSON.stringify({ ok: true }));
   }
   if (!payload) return redirectToLogin(req, res);
+  if (url.pathname === '/api/growth/control') return handleGrowthControl(req, res, payload);
   return proxy(req, res, loginCookie(issueToken(payload.sub), req));
 }
 

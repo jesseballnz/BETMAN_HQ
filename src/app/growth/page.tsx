@@ -1,5 +1,7 @@
 import MetricCard, { PageTitle } from '@/components/MetricCard';
 import { readGrowthSnapshot } from '@/lib/growth/snapshot';
+import { readGrowthControl } from '@/lib/growth/control';
+import GrowthControlPanel from './GrowthControlPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +11,7 @@ const money = (value: number) => new Intl.NumberFormat('en-NZ', {
 const integer = (value: number) => new Intl.NumberFormat('en-NZ').format(value);
 
 export default async function GrowthPage() {
-  const snapshot = await readGrowthSnapshot();
+  const [snapshot, control] = await Promise.all([readGrowthSnapshot(), readGrowthControl()]);
   if (!snapshot) {
     return (
       <div>
@@ -22,15 +24,21 @@ export default async function GrowthPage() {
   }
 
   const { funnel } = snapshot;
+  const liveReady = snapshot.automation?.liveReady === true;
+  const blockers = snapshot.automation?.blockers?.length
+    ? snapshot.automation.blockers
+    : ['Worker capability report pending', 'Separate Meta ads_management identity not installed'];
+  const actionStates = new Map((snapshot.automation?.actions || []).map((action) => [action.campaignId, action]));
   return (
     <div>
       <PageTitle subtitle="Autonomous commercial intelligence">Growth Agent</PageTitle>
+      <GrowthControlPanel initialControl={control} liveReady={liveReady} blockers={blockers} />
       <div className="mb-6 flex flex-wrap gap-2 text-xs font-bold">
         <span className={`rounded-full border px-3 py-1 ${snapshot.health.ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>
           {snapshot.health.ok ? 'Sources healthy' : 'Source failure'}
         </span>
-        <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-blue-300">
-          DRY RUN · no campaign writes
+        <span className={`rounded-full border px-3 py-1 ${control.mode === 'live' ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-blue-500/30 bg-blue-500/10 text-blue-300'}`}>
+          {control.mode === 'live' ? 'LIVE · guarded execution' : 'WATCH · no campaign writes'}
         </span>
         <span className="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-slate-300">
           {snapshot.window.since} → {snapshot.window.until}
@@ -77,7 +85,7 @@ export default async function GrowthPage() {
       <section className="overflow-hidden rounded-xl border border-slate-800 bg-gray-900">
         <div className="border-b border-slate-800 p-5">
           <h2 className="text-lg font-bold">Decision ledger</h2>
-          <p className="mt-1 text-xs text-slate-500">Deterministic recommendations. Execution remains disabled.</p>
+          <p className="mt-1 text-xs text-slate-500">Deterministic actions resolved by the worker according to the current operating mode and safety gates.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -89,11 +97,15 @@ export default async function GrowthPage() {
                 <th className="px-4 py-3 text-right">Trials</th>
                 <th className="px-4 py-3 text-right">Paid</th>
                 <th className="px-4 py-3 text-left">Decision</th>
+                <th className="px-4 py-3 text-left">Resolution</th>
                 <th className="px-4 py-3 text-left">Reason</th>
               </tr>
             </thead>
             <tbody>
-              {snapshot.decisions.map((decision) => (
+              {snapshot.decisions.map((decision) => {
+                const actionState = actionStates.get(decision.campaignId);
+                const status = actionState?.status || (decision.action === 'hold' ? 'resolved' : (control.mode === 'live' ? 'blocked' : 'watching'));
+                return (
                 <tr key={decision.campaignId} className="border-t border-slate-800">
                   <td className="max-w-[280px] truncate px-4 py-3 font-semibold" title={decision.campaign}>{decision.campaign}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{money(decision.evidence.spend)}</td>
@@ -101,11 +113,17 @@ export default async function GrowthPage() {
                   <td className="px-4 py-3 text-right tabular-nums">{integer(decision.evidence.trials)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{integer(decision.evidence.paid)}</td>
                   <td className="px-4 py-3 font-black uppercase text-emerald-300">{decision.action}</td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase ${status === 'executed' || status === 'resolved' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : status === 'failed' || status === 'blocked' ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-blue-500/30 bg-blue-500/10 text-blue-300'}`}>
+                      {status}
+                    </span>
+                    {actionState?.detail && <p className="mt-1 max-w-[260px] text-xs text-slate-500">{actionState.detail}</p>}
+                  </td>
                   <td className="max-w-[420px] px-4 py-3 text-xs text-slate-400">{decision.reason}</td>
                 </tr>
-              ))}
+              )})}
               {snapshot.decisions.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">No campaign data in this window.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">No campaign data in this window.</td></tr>
               )}
             </tbody>
           </table>

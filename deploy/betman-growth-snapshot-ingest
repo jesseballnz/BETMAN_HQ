@@ -3,13 +3,14 @@ set -euo pipefail
 
 target=/opt/betman/betman_hq/runtime/growth-agent/latest.json
 target_dir=${target%/*}
+control="$target_dir/control.json"
 tmp=$(mktemp "$target_dir/.latest.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
 
 umask 027
 /usr/bin/head -c 1048577 > "$tmp"
 
-/usr/bin/python3 - "$tmp" <<'PY'
+kind=$(/usr/bin/python3 - "$tmp" <<'PY'
 import json
 import os
 import sys
@@ -19,6 +20,9 @@ if os.path.getsize(path) > 1048576:
     raise SystemExit("snapshot_too_large")
 with open(path, "r", encoding="utf-8") as handle:
     snapshot = json.load(handle)
+if snapshot.get("request") == "control":
+    print("control")
+    raise SystemExit(0)
 if snapshot.get("schemaVersion") != 1:
     raise SystemExit("invalid_schema")
 if not isinstance(snapshot.get("generatedAt"), str):
@@ -27,9 +31,33 @@ if not isinstance(snapshot.get("health"), dict):
     raise SystemExit("missing_health")
 if not isinstance(snapshot.get("decisions"), list):
     raise SystemExit("missing_decisions")
+print("snapshot")
 PY
+)
+
+emit_control() {
+  /usr/bin/python3 - "$control" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as handle:
+        control = json.load(handle)
+    if control.get("schemaVersion") != 1 or control.get("mode") not in ("watch", "live"):
+        raise ValueError("invalid control")
+except Exception:
+    control = {"schemaVersion": 1, "mode": "watch", "updatedAt": None, "updatedBy": None}
+print(json.dumps(control, separators=(",", ":")))
+PY
+}
+
+if [[ "$kind" == control ]]; then
+  emit_control
+  exit 0
+fi
 
 /bin/chown betman:betman "$tmp"
 /bin/chmod 0640 "$tmp"
 /bin/mv -f "$tmp" "$target"
 trap - EXIT
+emit_control
